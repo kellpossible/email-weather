@@ -34,7 +34,7 @@ impl TryFrom<&url::Url> for Referral {
 }
 
 #[derive(Serialize)]
-#[serde(rename = "CamelCase")]
+#[serde(rename_all = "PascalCase")]
 struct PostFormData<'a> {
     reply_address: &'a str,
     reply_message: &'a str,
@@ -63,7 +63,7 @@ pub async fn reply(
     referral_url: &url::Url,
     message: &str,
 ) -> eyre::Result<()> {
-    // let encoded_message = encode_message(message);
+    dbg!(&referral_url);
 
     let get_response = client
         .get(referral_url.clone())
@@ -75,6 +75,12 @@ pub async fn reply(
         .await
         .and_then(Response::error_for_status)
         .wrap_err("Error while performing GET request")?;
+
+    let cookie = get_response
+        .headers()
+        .get("set-cookie")
+        .ok_or_else(|| eyre::eyre!("Expected Cookie header to be present in GET response"))?
+        .clone();
 
     let get_response_html: String = get_response
         .text()
@@ -113,12 +119,21 @@ pub async fn reply(
     post_url.set_query(None);
 
     let origin = post_url.origin().unicode_serialization();
-    let host = post_url.host_str().ok_or_else(|| eyre::eyre!("Unable to parse host from post url"))?.to_string();
+    dbg!(&origin);
+    let host = post_url
+        .host_str()
+        .ok_or_else(|| eyre::eyre!("Unable to parse host from post url"))?
+        .to_string();
+    dbg!(&host);
     let content_length = post_body.len();
+
+    dbg!(&post_body);
 
     let post_response = client
         .post(post_url)
         .body(post_body)
+        .header("Referrer-Policy", "strict-origin-when-cross-origin")
+        .header("Cookie", cookie)
         .header("Accept", "*/*")
         .header("Accept-Encoding", "gzip, deflate, br")
         .header("Cache-Control", "no-cache")
@@ -132,13 +147,23 @@ pub async fn reply(
         .header("X-Requested-With", "XMLHttpRequest")
         .header("Host", host)
         .header("Origin", origin)
+        .header("Pragma", "no-cache")
         .header("Sec-Fetch-Dest", "empty")
         .header("Sec-Fetch-Mode", "cors")
         .header("Sec-Fetch-Site", "same-origin")
+        .header("DNT", "1")
         .send()
         .await
-        .and_then(Response::error_for_status)
+        // .and_then(Response::error_for_status)
         .wrap_err("Error while performing POST request")?;
+
+    if !post_response.status().is_success() {
+        eyre::bail!(
+            "POST response status is not successful, code: {}, response body: {}",
+            post_response.status(),
+            post_response.text().await.unwrap_or_default()
+        );
+    }
 
     println!("POST status: {:?}", post_response.status());
     println!("POST response:\n{}", post_response.text().await?);
@@ -151,10 +176,10 @@ pub mod test {
     use std::convert::TryFrom;
 
     use url::Url;
-    use wiremock::{MockServer, Mock, matchers, ResponseTemplate};
+    use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
 
-    use super::{extract_message_id, Referral};
     use super::reply;
+    use super::{extract_message_id, Referral};
 
     const GET_RESPONSE_BODY: &'static str = r#"
     <html>
@@ -193,35 +218,57 @@ pub mod test {
         ));
 
         Mock::given(matchers::method("GET"))
-            .and(matchers::path("/textmessage/txtmsg?extId=08daa4e6-8eda-25c1-000d-3aa730600000&adr=email.weather.service%40gmail.com"))
-            .respond_with(ResponseTemplate::new(200)
-                .insert_header("content-type", "text/html; charset=utf-8")
-                .insert_header("content-encoding", "br")
-                .insert_header("date", "Mon, 03 Oct 2022 03:10:40 GMT")
-                .insert_header("server", "cloudflare")
-                .insert_header("access-control-expose-headers", "Request-Context")
-                .insert_header("cache-control", "private")
-                .insert_header("cf-ray", "75427c6cb8f3a835-SYD")
-                .set_body_string(GET_RESPONSE_BODY)
+            .and(matchers::path("/textmessage/txtmsg"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/html; charset=utf-8")
+                    .insert_header("content-encoding", "br")
+                    .insert_header("server", "cloudflare")
+                    .insert_header("set-cookie", "BrowsingMode=Desktop; path=/")
+                    .insert_header("vary", "Accept-Encoding")
+                    .insert_header("access-control-expose-headers", "Request-Context")
+                    .insert_header("cache-control", "private")
+                    .insert_header("x-frame-options", "DENY")
+                    .insert_header("cf-ray", "75427c6cb8f3a835-SYD")
+                    .set_body_string(GET_RESPONSE_BODY),
             )
+            .expect(1)
             .mount(&mock_server)
             .await;
 
         let success_body: String =
             serde_json::to_string(&serde_json::json!({"Success": true})).unwrap();
 
-
         Mock::given(matchers::method("POST"))
             .and(matchers::path("/TextMessage/TxtMsg"))
-            .respond_with(ResponseTemplate::new(200)
-                .insert_header("content-type", "application/json; charset=utf-8")
-                .insert_header("content-encoding", "br")
-                .set_body_string(success_body)
+            .and(matchers::body_string(
+                "ReplyAddress=email.weather.service%40gmail.com&\
+                    ReplyMessage=Unit+Test+message%2C+from+Luke&\
+                    MessageId=66270435&\
+                    Guid=08daa4e6-8eda-25c1-000d-3aa730600000",
+            ))
+            .and(matchers::header("Referrer", referral_url.as_str()))
+            .and(matchers::header(
+                "Host",
+                referral_url.host().unwrap().to_string().as_str(),
+            ))
+            .and(matchers::header(
+                "Origin",
+                referral_url.origin().unicode_serialization().as_str(),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json; charset=utf-8")
+                    .insert_header("content-encoding", "br")
+                    .set_body_string(success_body),
             )
+            .expect(1)
             .mount(&mock_server)
             .await;
 
         let client = reqwest::Client::new();
-        reply(&client, &referral_url, "Unit Test message, from Luke").await.unwrap();
+        reply(&client, &referral_url, "Unit Test message, from Luke")
+            .await
+            .unwrap();
     }
 }

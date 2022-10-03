@@ -126,7 +126,7 @@ impl<'de> Deserialize<'de> for WeatherCode {
 }
 
 #[derive(Serialize, Hash, PartialEq, Eq)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum HourlyVariable {
     /// Requests [Hourly::temperature_2m].
     #[serde(rename = "temperature_2m")]
@@ -255,11 +255,11 @@ pub struct Hourly {
 }
 
 #[derive(Serialize, Hash, PartialEq, Eq)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum DailyWeatherVariable {}
 
 #[derive(Serialize)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum TemperatureUnit {
     Celcius,
     Farenheit,
@@ -287,7 +287,7 @@ impl Default for WindspeedUnit {
 }
 
 #[derive(Serialize)]
-#[serde(rename = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum PrecipitationUnit {
     Mm,
     Inch,
