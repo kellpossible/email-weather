@@ -452,35 +452,11 @@ impl Serialize for ForecastParameters {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("latitude", &self.latitude)?;
         map.serialize_entry("longitude", &self.longitude)?;
-        if !self.hourly.is_empty() {
-            map.serialize_entry(
-                "hourly",
-                &self
-                    .hourly
-                    .iter()
-                    .map(|hv| {
-                        serde_json::to_value(&hv)
-                            .map_err(serde::ser::Error::custom)
-                            .map(|v| v.as_str().unwrap().to_string())
-                    })
-                    .collect::<Result<Vec<String>, _>>()?
-                    .join(","),
-            )?;
+        for hv in &self.hourly {
+            map.serialize_entry("hourly", &hv)?;
         }
-        if !self.daily.is_empty() {
-            map.serialize_entry(
-                "daily",
-                &self
-                    .daily
-                    .iter()
-                    .map(|hv| {
-                        serde_json::to_value(&hv)
-                            .map_err(serde::ser::Error::custom)
-                            .map(|v| v.as_str().unwrap().to_string())
-                    })
-                    .collect::<Result<Vec<String>, _>>()?
-                    .join(","),
-            )?;
+        for dv in &self.daily {
+            map.serialize_entry("daily", &dv)?;
         }
         self.time_format
             .as_ref()
@@ -550,6 +526,8 @@ pub enum Error {
     ResponseStatusNotSuccessful { code: StatusCode, reason: String },
     #[error("Error while parsing json")]
     SerdeJson(#[from] serde_json::Error),
+    #[error("Error while seriazizing url query parameters")]
+    SerdeUrlencoded(#[from] serde_urlencoded::ser::Error),
 }
 
 #[derive(Deserialize)]
@@ -561,11 +539,11 @@ pub async fn obtain_forecast(
     client: &reqwest::Client,
     parameters: &ForecastParameters,
 ) -> Result<Forecast, Error> {
-    let response = client
-        .request(Method::GET, "https://api.open-meteo.com/v1/forecast")
-        .query(parameters)
-        .send()
-        .await?;
+    let query = serde_urlencoded::to_string(&parameters)?;
+    let url = format!("https://api.open-meteo.com/v1/forecast?{}", query);
+    tracing::trace!("GET {}", url);
+
+    let response = client.request(Method::GET, url).send().await?;
 
     if response.status().is_success() {
         response.json().await.map_err(Error::from)

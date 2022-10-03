@@ -9,6 +9,7 @@ async fn main() {
         .longitude(170.3397567)
         .timezone(TimeZone::Auto)
         .hourly_entry(HourlyVariable::FreezingLevelHeight)
+        .hourly_entry(HourlyVariable::CloudCover)
         .build();
 
     println!(

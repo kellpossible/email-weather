@@ -238,7 +238,10 @@ async fn process_emails_impl(
             .hourly_entry(HourlyVariable::FreezingLevelHeight)
             .build();
 
-        tracing::debug!("Obtaining forecast for {:?}", forecast_parameters);
+        tracing::debug!(
+            "Obtaining forecast for forecast parameters {}",
+            serde_json::to_string_pretty(&forecast_parameters)?
+        );
         let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
             .await
             .wrap_err("Error obtaining forecast")?;
