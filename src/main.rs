@@ -203,7 +203,7 @@ async fn receive_emails(
     tracing::info!("Successful imap session login");
 
     tokio::select! {
-        result = shutdown_rx.recv() => { 
+        result = shutdown_rx.recv() => {
             tracing::debug!("Received shutdown broadcast");
             result.map_err(eyre::Error::from)
         }
@@ -217,23 +217,25 @@ async fn receive_emails(
     Ok(())
 }
 
-
 async fn process_emails_impl(mut emails_receiver: yaque::Receiver) -> eyre::Result<()> {
     loop {
         let received = emails_receiver.recv().await?;
         let received_email: Email = serde_json::from_slice(&*received)?;
         tracing::info!("Sending reply for email {:?}", received_email);
-        drop(received);
+        received.commit()?;
     }
 }
 
 #[tracing::instrument(skip(emails_receiver, shutdown_rx))]
-async fn process_emails(emails_receiver: yaque::Receiver, mut shutdown_rx: tokio::sync::broadcast::Receiver<()>) -> eyre::Result<()> {
+async fn process_emails(
+    emails_receiver: yaque::Receiver,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) -> eyre::Result<()> {
     tracing::debug!("Starting processing emails job");
     tokio::select! {
-        result = shutdown_rx.recv() => { 
+        result = shutdown_rx.recv() => {
             tracing::debug!("Received shutdown broadcast");
-            result.map_err(eyre::Error::from) 
+            result.map_err(eyre::Error::from)
         }
         result = process_emails_impl(emails_receiver) => { result }
     }
