@@ -13,3 +13,5 @@ A service that:
 + Compensate reported temperature using altitude
   + https://www.opentopodata.org/datasets/aster/ Global 30m resolution
   + https://www.opentopodata.org/datasets/nzdem/ NZ 8m resolution (probably want to use another API to determine whether we are inside New Zealand? Or check inside a bounding box first)
++ Use a persistent queue for message processing robustness
+  + https://github.com/tokahuke/yaque
