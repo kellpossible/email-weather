@@ -8,67 +8,67 @@ use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
 #[derive(Debug)]
 pub enum WeatherCode {
     /// Code: 0
-    ClearSky,
+    ClearSky = 0,
     /// Code: 1
-    MainlyClear,
+    MainlyClear = 1,
     /// Code: 2
-    PartlyCloudy,
+    PartlyCloudy = 2,
     /// Code: 3
-    Overcast,
+    Overcast = 3,
     /// Code: 45
-    Fog,
+    Fog = 45,
     /// Code: 48
-    FogDepositingRime,
+    FogDepositingRime = 48,
     /// Code: 51
-    DrizzleLight,
+    DrizzleLight = 51,
     /// Code: 53
-    DrizzleModerate,
+    DrizzleModerate = 53,
     /// Code: 55
-    DrizzleDense,
+    DrizzleDense = 55,
     /// Code: 56
-    DrizzleFreezingLight,
+    DrizzleFreezingLight = 56,
     /// Code: 57
-    DrizzleFreezingDense,
+    DrizzleFreezingDense = 57,
     /// Code: 61
-    RainSlight,
+    RainSlight = 61,
     /// Code: 63
-    RainModerate,
+    RainModerate = 63,
     /// Code: 65
-    RainHeavy,
+    RainHeavy = 65,
     /// Code: 66
-    RainFreezingLight,
+    RainFreezingLight = 66,
     /// Code: 67
-    RainFreezingHeavy,
+    RainFreezingHeavy = 67,
     /// Code: 71
-    SnowSlight,
+    SnowSlight = 71,
     /// Code: 73
-    SnowModerate,
+    SnowModerate = 73,
     /// Code: 75
-    SnowHeavy,
+    SnowHeavy = 75,
     /// Code: 77
-    SnowGrains,
+    SnowGrains = 77,
     /// Code: 80
-    RainShowersSlight,
+    RainShowersSlight = 80,
     /// Code: 81
-    RainShowersModerate,
+    RainShowersModerate = 81,
     /// Code: 82
-    RainShowersViolent,
+    RainShowersViolent = 82,
     /// Code: 85
-    SnowShowersSlight,
+    SnowShowersSlight = 85,
     /// Code: 86
-    SnowShowersHeavy,
+    SnowShowersHeavy = 86,
     /// Code: 95
     ///
     /// Note: Thunderstorm forecast with hail is only available in Central Europe
-    ThunderstormSlightOrModerate,
+    ThunderstormSlightOrModerate = 95,
     /// Code: 96
     ///
     /// *Note: Thunderstorm forecast with hail is only available in Central Europe*
-    ThunderstormHailSlight,
+    ThunderstormHailSlight = 96,
     /// Code: 99
     ///
     /// *Note: Thunderstorm forecast with hail is only available in Central Europe*
-    ThunderstormHailHeavy,
+    ThunderstormHailHeavy = 99,
 }
 
 impl<'de> Deserialize<'de> for WeatherCode {
@@ -83,6 +83,13 @@ impl<'de> Deserialize<'de> for WeatherCode {
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("an unsigned integer between 0 and 99")
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.visit_u8(v as u8)
             }
 
             fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
@@ -158,7 +165,9 @@ pub enum HourlyVariable {
     /// Requests [Hourly::cloud_cover_high].
     #[serde(rename = "cloudcover_high")]
     CloudCoverHigh,
-
+    // TODO: more fields
+    /// Requests [Hourly::precipitation].
+    Precipitation,
     // TODO: more fields
     /// Requests [Hourly::weather_code].
     #[serde(rename = "weathercode")]
@@ -238,7 +247,12 @@ pub struct Hourly {
     /// + Unit: `%`
     #[serde(rename = "cloudcover_high")]
     pub cloud_cover_high: Option<Vec<f32>>,
-
+    // TODO: more fields
+    /// Total precipitation (rain, showers, snow) sum of the preceding hour.
+    ///
+    /// + Valid time: `Preceding hour sum`
+    /// + Unit: `mm (inch)`
+    pub precipitation: Option<Vec<f32>>,
     // TODO: more fields
     /// Weather condition.
     ///

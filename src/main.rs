@@ -5,7 +5,7 @@ use chrono_tz::OffsetComponents;
 use email_weather::inreach;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone};
+use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone, WeatherCode};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -236,9 +236,11 @@ async fn process_emails_impl(
         let forecast_parameters = ForecastParameters::builder()
             .latitude(latitude)
             .longitude(longitude)
-            .hourly_entry(HourlyVariable::Temperature2m)
+            // .hourly_entry(HourlyVariable::Temperature2m)
             .hourly_entry(HourlyVariable::CloudCover)
             .hourly_entry(HourlyVariable::FreezingLevelHeight)
+            .hourly_entry(HourlyVariable::WeatherCode)
+            .hourly_entry(HourlyVariable::Precipitation)
             .timezone(TimeZone::Auto)
             .build();
 
@@ -255,9 +257,16 @@ async fn process_emails_impl(
             .hourly
             .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
         let time: &[chrono::NaiveDateTime] = &hourly.time;
-        let temperature: &[f32] = &hourly
-            .temperature_2m
-            .ok_or_else(|| eyre::eyre!("expected temperature_2m to be present"))?;
+
+        // let temperature: &[f32] = &hourly
+        //     .temperature_2m
+        //     .ok_or_else(|| eyre::eyre!("expected temperature_2m to be present"))?;
+        let weather_code: &[WeatherCode] = &hourly
+            .weather_code
+            .ok_or_else(|| eyre::eyre!("expected weather_code to be present"))?;
+        let precipitation: &[f32] = &hourly
+            .precipitation
+            .ok_or_else(|| eyre::eyre!("expected precipitation to be present"))?;
         let cloud_cover: &[f32] = &hourly
             .cloud_cover
             .ok_or_else(|| eyre::eyre!("expected cloud_cover to be present"))?;
@@ -267,7 +276,8 @@ async fn process_emails_impl(
 
         if [
             time.len(),
-            temperature.len(),
+            // temperature.len(),
+            precipitation.len(),
             freezing_level_height.len(),
             cloud_cover.len(),
         ]
@@ -280,10 +290,11 @@ async fn process_emails_impl(
         }
 
         let mut messages: Vec<String> = Vec::new();
-        let offset = chrono::TimeZone::offset_from_utc_datetime(
-            &forecast.timezone,
-            &chrono::Utc::now().naive_utc(),
-        );
+        let utc_now: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();
+        let offset = chrono::TimeZone::offset_from_utc_datetime(&forecast.timezone, &utc_now);
+        let current_local_time: chrono::NaiveDateTime =
+            chrono::TimeZone::from_utc_datetime(&forecast.timezone, &utc_now).naive_local();
+        tracing::debug!("current local time: {}", current_local_time);
         let total_offset: chrono::Duration = offset.base_utc_offset() + offset.dst_offset();
 
         if total_offset.num_seconds() != forecast.utc_offset_seconds {
@@ -311,14 +322,32 @@ async fn process_emails_impl(
 
         messages.push(format!("Tz{} E{:.0}", formatted_offset, forecast.elevation));
 
-        let mut i = 0;
-        while i <= usize::min(time.len() - 1, 48) {
-            let formatted_time = time[i].format("%dT%H");
-            messages.push(format!(
-                "{} T{:.1} F{:.0} C{:.0}",
-                formatted_time, temperature[i], freezing_level_height[i], cloud_cover[i]
-            ));
-            i += 6;
+        // Skip times that are after the current local time.
+        let start_i: usize = time.iter().enumerate().fold(0, |acc, (i, local_time)| {
+            if current_local_time > *local_time {
+                usize::min(i + 1, time.len() - 1)
+            } else {
+                acc
+            }
+        });
+
+        let mut i = start_i;
+        let mut acc_precipitation: f32 = 0.0;
+        while i <= usize::min(time.len() - 1, i + 48) {
+            acc_precipitation += precipitation[i];
+            if (i - start_i) % 6 == 0 {
+                let formatted_time = time[i].format("%dT%H");
+                messages.push(format!(
+                    "{} F{:.0} C{:.0} W{} P{:.0}",
+                    formatted_time,
+                    freezing_level_height[i],
+                    cloud_cover[i],
+                    weather_code[i] as u8,
+                    acc_precipitation,
+                ));
+                acc_precipitation = 0.0;
+            }
+            i += 1;
         }
 
         tracing::info!("Sending reply for email {:?}", received_email);
