@@ -1,7 +1,8 @@
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 
+use chrono::NaiveDateTime;
 use reqwest::{Method, StatusCode};
-use serde::{de::Visitor, Deserialize, Serialize, ser::SerializeMap};
+use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
 
 /// WMO Weather interpretation code (WW)
 #[derive(Debug)]
@@ -125,9 +126,11 @@ impl<'de> Deserialize<'de> for WeatherCode {
     }
 }
 
-#[derive(Serialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HourlyVariable {
+    /// This isn't a selectable value, but it can be returned in [Forecast::hourly_units].
+    Time,
     /// Requests [Hourly::temperature_2m].
     #[serde(rename = "temperature_2m")]
     Temperature2m,
@@ -171,6 +174,7 @@ pub enum HourlyVariable {
 #[derive(Debug, Deserialize)]
 pub struct Hourly {
     /// The times for the values in this struct's fields.
+    #[serde(deserialize_with = "naive_times_deserialize")]
     time: Vec<chrono::NaiveDateTime>,
     /// Air temperature at 2 meters above ground.
     ///
@@ -254,11 +258,78 @@ pub struct Hourly {
     freezing_level_height: Vec<f32>,
 }
 
+/// Deserialize date time in ISO8601 format without seconds or timezone.
+fn naive_time_deserialize<'de, D>(deserializer: D) -> Result<chrono::NaiveDateTime, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct StrVisitor;
+    impl<'de> serde::de::Visitor<'de> for StrVisitor {
+        type Value = NaiveDateTime;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(
+                formatter,
+                "An ISO8601 date without the seconds or the timezone: e.g. 2022-08-02T10:42"
+            )
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M")
+                .map_err(serde::de::Error::custom)
+        }
+    }
+
+    deserializer.deserialize_str(StrVisitor)
+}
+
+/// Deserialize sequence of date time in ISO8601 format without seconds or timezone.
+fn naive_times_deserialize<'de, D>(deserializer: D) -> Result<Vec<chrono::NaiveDateTime>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct DateTime(chrono::NaiveDateTime);
+
+    impl<'de> Deserialize<'de> for DateTime {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            naive_time_deserialize(deserializer).map(DateTime)
+        }
+    }
+
+    struct SeqVisitor;
+    impl<'de> serde::de::Visitor<'de> for SeqVisitor {
+        type Value = Vec<chrono::NaiveDateTime>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(formatter, "Expecting a sequence of values")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut v = Vec::new();
+            while let Some(element) = seq.next_element::<DateTime>()? {
+                v.push(element.0)
+            }
+
+            Ok(v)
+        }
+    }
+    deserializer.deserialize_seq(SeqVisitor)
+}
+
 #[derive(Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DailyWeatherVariable {}
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TemperatureUnit {
     Celcius,
@@ -271,7 +342,7 @@ impl Default for TemperatureUnit {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename = "snake_case")]
 pub enum WindspeedUnit {
     Kmh,
@@ -286,7 +357,7 @@ impl Default for WindspeedUnit {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrecipitationUnit {
     Mm,
@@ -299,7 +370,7 @@ impl Default for PrecipitationUnit {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename = "snake_case")]
 pub enum TimeFormat {
     Iso8601,
@@ -316,6 +387,7 @@ impl Default for TimeFormat {
     }
 }
 
+#[derive(Debug)]
 pub enum TimeZone {
     /// The position coordinates will be automatically resolved to the local time zone.
     Auto,
@@ -342,7 +414,7 @@ impl Serialize for TimeZone {
     }
 }
 
-#[derive(buildstructor::Builder)]
+#[derive(Debug, buildstructor::Builder)]
 pub struct ForecastParameters {
     /// Geographical WGS84 latitude of the location.
     pub latitude: f32,
@@ -375,16 +447,61 @@ pub struct ForecastParameters {
 impl Serialize for ForecastParameters {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("latitude", &self.latitude)?;
         map.serialize_entry("longitude", &self.longitude)?;
-        self.time_format.as_ref().map(|v| map.serialize_entry("timeformat", v)).transpose()?;
-        self.timezone.as_ref().map(|v| map.serialize_entry("timezone", v)).transpose()?;
+        if !self.hourly.is_empty() {
+            map.serialize_entry(
+                "hourly",
+                &self
+                    .hourly
+                    .iter()
+                    .map(|hv| {
+                        serde_json::to_value(&hv)
+                            .map_err(serde::ser::Error::custom)
+                            .map(|v| v.as_str().unwrap().to_string())
+                    })
+                    .collect::<Result<Vec<String>, _>>()?
+                    .join(","),
+            )?;
+        }
+        if !self.daily.is_empty() {
+            map.serialize_entry(
+                "daily",
+                &self
+                    .daily
+                    .iter()
+                    .map(|hv| {
+                        serde_json::to_value(&hv)
+                            .map_err(serde::ser::Error::custom)
+                            .map(|v| v.as_str().unwrap().to_string())
+                    })
+                    .collect::<Result<Vec<String>, _>>()?
+                    .join(","),
+            )?;
+        }
+        self.time_format
+            .as_ref()
+            .map(|v| map.serialize_entry("timeformat", v))
+            .transpose()?;
+        self.timezone
+            .as_ref()
+            .map(|v| map.serialize_entry("timezone", v))
+            .transpose()?;
+        self.past_days
+            .map(|v| map.serialize_entry("past_days", &v))
+            .transpose()?;
+        self.start_date
+            .map(|v| map.serialize_entry("start_date", &v))
+            .transpose()?;
+        self.end_date
+            .map(|v| map.serialize_entry("end_date", &v))
+            .transpose()?;
         map.end()
     }
 }
-
 
 #[derive(Debug, Deserialize)]
 pub struct CurrentWeather {
@@ -421,6 +538,8 @@ pub struct Forecast {
     pub timezone_abbreviation: String,
     /// Hourly forecast data.
     pub hourly: Option<Hourly>,
+    /// For each selected weather variable, the unit will be listed here.
+    pub hourly_units: Option<HashMap<HourlyVariable, String>>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -429,6 +548,8 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
     #[error("Response status unsuccessful, code: {code}, reason: {reason}")]
     ResponseStatusNotSuccessful { code: StatusCode, reason: String },
+    #[error("Error while parsing json")]
+    SerdeJson(#[from] serde_json::Error),
 }
 
 #[derive(Deserialize)]
@@ -447,8 +568,7 @@ pub async fn obtain_forecast(
         .await?;
 
     if response.status().is_success() {
-        let forecast = response.json::<Forecast>().await?;
-        Ok(forecast)
+        response.json().await.map_err(Error::from)
     } else {
         Err(Error::ResponseStatusNotSuccessful {
             code: response.status(),
@@ -466,6 +586,8 @@ mod test {
     use chrono_tz::Tz;
     use serde_json::json;
 
+    use crate::Forecast;
+
     use super::TimeZone;
 
     #[test]
@@ -478,5 +600,34 @@ mod test {
 
         let timezone_auckland = serde_json::to_value(&TimeZone::Tz(Tz::Pacific__Auckland)).unwrap();
         assert_eq!(json!("Pacific/Auckland"), timezone_auckland);
+    }
+
+    #[test]
+    fn forecast_deserialize() {
+        let forecast_json = r#"{
+  "elevation": 0.0,
+  "generationtime_ms": 0.5849599838256836,
+  "hourly": {
+    "freezinglevel_height": [
+      2000.0,
+      1980.0
+    ],
+    "time": [
+      "2022-10-04T00:00",
+      "2022-10-04T01:00"
+    ]
+  },
+  "hourly_units": {
+    "freezinglevel_height": "m",
+    "time": "iso8601"
+  },
+  "latitude": -43.375,
+  "longitude": 170.25,
+  "timezone": "Pacific/Auckland",
+  "timezone_abbreviation": "NZDT",
+  "utc_offset_seconds": 46800
+}"#;
+
+        let forecast: Forecast = serde_json::from_str(forecast_json).unwrap();
     }
 }

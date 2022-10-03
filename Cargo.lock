@@ -481,6 +481,7 @@ dependencies = [
  "grib",
  "mail-parser",
  "once_cell",
+ "open-meteo",
  "regex",
  "reqwest",
  "scraper",

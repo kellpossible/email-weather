@@ -4,6 +4,7 @@ use async_imap::types::{Fetch, Seq};
 use email_weather::inreach;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
+use open_meteo::{DailyWeatherVariable, Forecast, ForecastParameters, HourlyVariable};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -217,19 +218,42 @@ async fn receive_emails(
     Ok(())
 }
 
-async fn process_emails_impl(mut emails_receiver: yaque::Receiver) -> eyre::Result<()> {
+async fn process_emails_impl(
+    mut emails_receiver: yaque::Receiver,
+    http_client: reqwest::Client,
+) -> eyre::Result<()> {
     loop {
         let received = emails_receiver.recv().await?;
         let received_email: Email = serde_json::from_slice(&*received)?;
+
+        let (latitude, longitude): (f32, f32) = match &received_email {
+            Email::Inreach(email) => (email.latitude, email.longitude),
+        };
+
+        let forecast_parameters = ForecastParameters::builder()
+            .latitude(latitude)
+            .longitude(longitude)
+            .hourly_entry(HourlyVariable::Temperature2m)
+            .hourly_entry(HourlyVariable::CloudCover)
+            .hourly_entry(HourlyVariable::FreezingLevelHeight)
+            .build();
+
+        tracing::debug!("Obtaining forecast for {:?}", forecast_parameters);
+        let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
+            .await
+            .wrap_err("Error obtaining forecast")?;
+        tracing::info!("Obtained forecast: {:?}", forecast);
+
         tracing::info!("Sending reply for email {:?}", received_email);
         received.commit()?;
     }
 }
 
-#[tracing::instrument(skip(emails_receiver, shutdown_rx))]
+#[tracing::instrument(skip(emails_receiver, shutdown_rx, http_client))]
 async fn process_emails(
     emails_receiver: yaque::Receiver,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    http_client: reqwest::Client,
 ) -> eyre::Result<()> {
     tracing::debug!("Starting processing emails job");
     tokio::select! {
@@ -237,7 +261,7 @@ async fn process_emails(
             tracing::debug!("Received shutdown broadcast");
             result.map_err(eyre::Error::from)
         }
-        result = process_emails_impl(emails_receiver) => { result }
+        result = process_emails_impl(emails_receiver, http_client) => { result }
     }
 }
 
@@ -274,7 +298,11 @@ async fn main() -> eyre::Result<()> {
         yaque::channel(emails_queue_path).wrap_err("unable to create emails queue")?;
 
     let receive_join = tokio::spawn(receive_emails(emails_sender, emails_receive_shutdown_rx));
-    let process_join = tokio::spawn(process_emails(emails_receiver, emails_process_shutdown_rx));
+    let process_join = tokio::spawn(process_emails(
+        emails_receiver,
+        emails_process_shutdown_rx,
+        http_client,
+    ));
 
     // TODO: perhaps use a select here instead? What happens if failure occurs during setup before
     // running properly actually starts?
