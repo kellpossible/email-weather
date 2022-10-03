@@ -475,6 +475,8 @@ version = "0.1.0"
 dependencies = [
  "async-imap",
  "async-native-tls",
+ "chrono",
+ "chrono-tz",
  "color-eyre",
  "eyre",
  "futures",

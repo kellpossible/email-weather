@@ -5,9 +5,9 @@ use reqwest::Response;
 use serde::Serialize;
 use uuid::Uuid;
 
-struct Referral {
-    ext_id: Uuid,
-    adr: String,
+pub struct Referral {
+    pub ext_id: Uuid,
+    pub adr: String,
 }
 
 impl TryFrom<&url::Url> for Referral {
@@ -58,12 +58,18 @@ fn extract_message_id(html: &str) -> eyre::Result<String> {
     Ok(message_id.to_string())
 }
 
+#[tracing::instrument(skip(client, referral_url, message))]
 pub async fn reply(
     client: &reqwest::Client,
     referral_url: &url::Url,
     message: &str,
 ) -> eyre::Result<()> {
-    dbg!(&referral_url);
+    if message.len() > 160 {
+        eyre::bail!(
+            "Message length ({}) is greater than the limit of 160",
+            message.len()
+        );
+    }
 
     let get_response = client
         .get(referral_url.clone())
@@ -104,30 +110,18 @@ pub async fn reply(
     })
     .wrap_err("Unable to serialize POST form data")?;
 
-    // println!("headers: {:?}", response.headers());
-
-    // let request_context = response
-    //     .headers()
-    //     .get("request-context")
-    //     .ok_or_else(|| eyre::eyre!("Expected request-context header to be present in response"))?
-    //     .to_str().wrap_err("invalid request-context header unable to parse to utf8 string")?;
-    //
-    // let (key, value) = request_context.split_once('=').ok_or_else(|| eyre::eyre!("unexpected request-context header format: {:?}", request_context))?;
-
     let mut post_url = referral_url.clone();
     post_url.set_path("TextMessage/TxtMsg");
     post_url.set_query(None);
 
     let origin = post_url.origin().unicode_serialization();
-    dbg!(&origin);
     let host = post_url
         .host_str()
         .ok_or_else(|| eyre::eyre!("Unable to parse host from post url"))?
         .to_string();
-    dbg!(&host);
     let content_length = post_body.len();
 
-    dbg!(&post_body);
+    tracing::debug!("{:?}", post_body);
 
     let post_response = client
         .post(post_url)

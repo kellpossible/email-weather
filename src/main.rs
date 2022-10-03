@@ -1,10 +1,11 @@
 use std::{collections::HashSet, path::Path, str::FromStr, sync::Arc};
 
-use async_imap::types::{Fetch, Seq};
+use async_imap::types::Fetch;
+use chrono_tz::OffsetComponents;
 use email_weather::inreach;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use open_meteo::{DailyWeatherVariable, Forecast, ForecastParameters, HourlyVariable};
+use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -150,6 +151,7 @@ where
 {
     loop {
         receive_emails_poll_inbox(emails_sender.clone(), imap_session).await?;
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     }
 }
 
@@ -220,6 +222,7 @@ async fn receive_emails(
 
 async fn process_emails_impl(
     mut emails_receiver: yaque::Receiver,
+    mut reply_sender: yaque::Sender,
     http_client: reqwest::Client,
 ) -> eyre::Result<()> {
     loop {
@@ -236,6 +239,7 @@ async fn process_emails_impl(
             .hourly_entry(HourlyVariable::Temperature2m)
             .hourly_entry(HourlyVariable::CloudCover)
             .hourly_entry(HourlyVariable::FreezingLevelHeight)
+            .timezone(TimeZone::Auto)
             .build();
 
         tracing::debug!(
@@ -245,16 +249,122 @@ async fn process_emails_impl(
         let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
             .await
             .wrap_err("Error obtaining forecast")?;
-        tracing::info!("Obtained forecast: {:?}", forecast);
+        tracing::info!("Successfully obtained forecast");
+
+        let hourly: Hourly = forecast
+            .hourly
+            .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
+        let time: &[chrono::NaiveDateTime] = &hourly.time;
+        let temperature: &[f32] = &hourly
+            .temperature_2m
+            .ok_or_else(|| eyre::eyre!("expected temperature_2m to be present"))?;
+        let cloud_cover: &[f32] = &hourly
+            .cloud_cover
+            .ok_or_else(|| eyre::eyre!("expected cloud_cover to be present"))?;
+        let freezing_level_height: &[f32] = &hourly
+            .freezing_level_height
+            .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
+
+        if [
+            time.len(),
+            temperature.len(),
+            freezing_level_height.len(),
+            cloud_cover.len(),
+        ]
+        .into_iter()
+        .collect::<HashSet<usize>>()
+        .len()
+            != 1
+        {
+            eyre::bail!("forecast hourly array lengths don't match")
+        }
+
+        let mut messages: Vec<String> = Vec::new();
+        let offset = chrono::TimeZone::offset_from_utc_datetime(
+            &forecast.timezone,
+            &chrono::Utc::now().naive_utc(),
+        );
+        let total_offset: chrono::Duration = offset.base_utc_offset() + offset.dst_offset();
+
+        if total_offset.num_seconds() != forecast.utc_offset_seconds {
+            tracing::warn!(
+                "Reported timezone offsets don't match {} != {}",
+                total_offset.num_seconds(),
+                forecast.utc_offset_seconds
+            );
+        }
+
+        let formatted_offset: String = if total_offset.is_zero() {
+            format!("GMT")
+        } else {
+            let formatted_duration = format!(
+                "{:02}:{:02}",
+                total_offset.num_hours(),
+                total_offset.num_minutes() % 60
+            );
+            if total_offset > chrono::Duration::zero() {
+                format!("+{}", formatted_duration)
+            } else {
+                format!("-{}", formatted_duration)
+            }
+        };
+
+        messages.push(format!("Tz{} E{:.0}", formatted_offset, forecast.elevation));
+
+        let mut i = 0;
+        while i <= usize::min(time.len() - 1, 48) {
+            let formatted_time = time[i].format("%dT%H");
+            messages.push(format!(
+                "{} T{:.1} F{:.0} C{:.0}",
+                formatted_time, temperature[i], freezing_level_height[i], cloud_cover[i]
+            ));
+            i += 6;
+        }
 
         tracing::info!("Sending reply for email {:?}", received_email);
+
+        let mut message: String = String::new();
+        for (i, m) in messages.into_iter().enumerate() {
+            if message.len() + m.len() > 160 {
+                break;
+            }
+
+            if i > 0 {
+                message.push('\n')
+            }
+            message.push_str(&m);
+        }
+        tracing::info!("message (len: {}):\n{}", message.len(), message);
+
+        let reply = match received_email {
+            Email::Inreach(email) => Reply::InReach(InReachReply {
+                referral_url: email.referral_url,
+                message,
+            }),
+        };
+
+        let reply_bytes = serde_json::to_vec(&reply).wrap_err("Failed to serialize reply")?;
+        reply_sender.send(&reply_bytes).await?;
+
         received.commit()?;
     }
 }
 
-#[tracing::instrument(skip(emails_receiver, shutdown_rx, http_client))]
+#[derive(Serialize, Deserialize, Debug)]
+struct InReachReply {
+    referral_url: url::Url,
+    message: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Reply {
+    InReach(InReachReply),
+}
+
+#[tracing::instrument(skip(emails_receiver, reply_sender, shutdown_rx, http_client))]
 async fn process_emails(
     emails_receiver: yaque::Receiver,
+    reply_sender: yaque::Sender,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
 ) -> eyre::Result<()> {
@@ -264,7 +374,45 @@ async fn process_emails(
             tracing::debug!("Received shutdown broadcast");
             result.map_err(eyre::Error::from)
         }
-        result = process_emails_impl(emails_receiver, http_client) => { result }
+        result = process_emails_impl(emails_receiver, reply_sender, http_client) => { result }
+    }
+}
+
+async fn send_replies_impl(
+    mut reply_receiver: yaque::Receiver,
+    http_client: reqwest::Client,
+) -> eyre::Result<()> {
+    loop {
+        let reply_bytes = reply_receiver.recv().await?;
+        let reply: Reply =
+            serde_json::from_slice(&*reply_bytes).wrap_err("Failed to deserialize reply")?;
+        match reply {
+            Reply::InReach(reply) => {
+                tracing::info!("Sending reply: {:?}", reply);
+                inreach::reply::reply(&http_client, &reply.referral_url, &reply.message)
+                    .await
+                    .wrap_err("Error sending reply message")?;
+                tracing::info!("Successfully sent reply!");
+            }
+        }
+
+        reply_bytes.commit()?;
+    }
+}
+
+#[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client))]
+async fn send_replies(
+    reply_receiver: yaque::Receiver,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    http_client: reqwest::Client,
+) -> eyre::Result<()> {
+    tracing::debug!("Starting processing emails job");
+    tokio::select! {
+        result = shutdown_rx.recv() => {
+            tracing::debug!("Received shutdown broadcast");
+            result.map_err(eyre::Error::from)
+        }
+        result = send_replies_impl(reply_receiver, http_client) => { result }
     }
 }
 
@@ -281,6 +429,7 @@ async fn main() -> eyre::Result<()> {
 
     let (shutdown_tx, emails_receive_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
     let emails_process_shutdown_rx = shutdown_tx.subscribe();
+    let send_replies_shutdown_rx = shutdown_tx.subscribe();
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
@@ -297,13 +446,22 @@ async fn main() -> eyre::Result<()> {
         std::fs::create_dir(data_path).wrap_err("unable to create data/ directory")?;
     }
     let emails_queue_path = data_path.join("emails");
+    let reply_queue_path = data_path.join("reply");
     let (emails_sender, emails_receiver) =
         yaque::channel(emails_queue_path).wrap_err("unable to create emails queue")?;
+    let (reply_sender, reply_receiver) =
+        yaque::channel(reply_queue_path).wrap_err("unable to create dispatch queue")?;
 
     let receive_join = tokio::spawn(receive_emails(emails_sender, emails_receive_shutdown_rx));
     let process_join = tokio::spawn(process_emails(
         emails_receiver,
+        reply_sender,
         emails_process_shutdown_rx,
+        http_client.clone(),
+    ));
+    let reply_join = tokio::spawn(send_replies(
+        reply_receiver,
+        send_replies_shutdown_rx,
         http_client,
     ));
 
@@ -311,6 +469,7 @@ async fn main() -> eyre::Result<()> {
     // running properly actually starts?
     receive_join.await??;
     process_join.await??;
+    reply_join.await??;
 
     Ok(())
 }

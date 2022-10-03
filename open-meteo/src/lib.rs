@@ -175,29 +175,29 @@ pub enum HourlyVariable {
 pub struct Hourly {
     /// The times for the values in this struct's fields.
     #[serde(deserialize_with = "naive_times_deserialize")]
-    time: Vec<chrono::NaiveDateTime>,
+    pub time: Vec<chrono::NaiveDateTime>,
     /// Air temperature at 2 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `°C (°F)`
-    temperature_2m: Option<Vec<f32>>,
+    pub temperature_2m: Option<Vec<f32>>,
     /// Relative humidity at 2 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
     #[serde(rename = "relativehumidity_2m")]
-    relative_humidity_2m: Option<Vec<f32>>,
+    pub relative_humidity_2m: Option<Vec<f32>>,
     /// Dew point temperature at 2 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `°C (°F)`
-    dewpoint_2m: Option<Vec<f32>>,
+    pub dewpoint_2m: Option<Vec<f32>>,
     /// Apparent temperature is the perceived feels-like temperature combining wind chill factor,
     /// relative humidity and solar radiation.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `°C (°F)`
-    apparent_temperature: Option<Vec<f32>>,
+    pub apparent_temperature: Option<Vec<f32>>,
     /// Atmospheric air pressure reduced to mean sea level (msl) Typically pressure on mean sea
     /// level is used in meteorology.
     ///
@@ -205,7 +205,7 @@ pub struct Hourly {
     /// + Unit: `hPa`
     ///
     /// See also: [Hourly::surface_pressure].
-    pressure_msl: Option<Vec<f32>>,
+    pub pressure_msl: Option<Vec<f32>>,
     /// Atmospheric air pressure reduced to pressure at surface. Surface pressure gets lower with
     /// increasing elevation.
     ///
@@ -213,49 +213,49 @@ pub struct Hourly {
     /// + Unit: `hPa`
     ///
     /// See also: [Hourly::pressure_msl].
-    surface_pressure: Option<Vec<f32>>,
+    pub surface_pressure: Option<Vec<f32>>,
     /// Total cloud cover as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
     #[serde(rename = "cloudcover")]
-    cloud_cover: Option<Vec<f32>>,
+    pub cloud_cover: Option<Vec<f32>>,
     /// Low level cloud and fog cover up to 3 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
     #[serde(rename = "cloudcover_low")]
-    cloud_cover_low: Option<Vec<f32>>,
+    pub cloud_cover_low: Option<Vec<f32>>,
     /// Mid level cloud and fog cover 3 to 8 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
     #[serde(rename = "cloudcover_mid")]
-    cloud_cover_mid: Option<Vec<f32>>,
+    pub cloud_cover_mid: Option<Vec<f32>>,
     /// High level cloud and fog cover from 8 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
     #[serde(rename = "cloudcover_high")]
-    cloud_cover_high: Option<Vec<f32>>,
+    pub cloud_cover_high: Option<Vec<f32>>,
 
     // TODO: more fields
     /// Weather condition.
     ///
     /// + Valid time: `Instant`
     #[serde(rename = "weathercode")]
-    weather_code: Option<Vec<WeatherCode>>,
+    pub weather_code: Option<Vec<WeatherCode>>,
     /// Snow depth on the ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `meters`
-    snow_depth: Option<Vec<f32>>,
+    pub snow_depth: Option<Vec<f32>>,
     /// Altitude above sea level of the 0°C level.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `meters`
     #[serde(rename = "freezinglevel_height")]
-    freezing_level_height: Vec<f32>,
+    pub freezing_level_height: Option<Vec<f32>>,
 }
 
 /// Deserialize date time in ISO8601 format without seconds or timezone.
@@ -507,7 +507,7 @@ pub struct Forecast {
     #[serde(rename = "generationtime_ms")]
     pub generation_time_ms: f32,
     /// Applied timezone offset from the [ForecastParameter::time_format] parameter.
-    pub utc_offset_seconds: u64,
+    pub utc_offset_seconds: i64,
     /// Timezone identifier.
     pub timezone: chrono_tz::Tz,
     /// Timezone abbreviation.
