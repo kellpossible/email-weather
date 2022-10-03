@@ -1398,6 +1398,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-topo-data"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "openjpeg-sys"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

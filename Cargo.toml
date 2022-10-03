@@ -37,4 +37,4 @@ open-meteo = { path = "open-meteo" }
 wiremock = "0.5"
 
 [workspace]
-members = ["open-meteo"]
+members = ["open-meteo", "open-topo-data"]
