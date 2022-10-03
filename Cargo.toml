@@ -1,0 +1,16 @@
+[package]
+name = "email-weather"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-imap = { version = "0.6.0", default-features = false, features = ["runtime-tokio"]}
+lettre = "0.10.1"
+grib = { git = "https://github.com/noritada/grib-rs.git" }
+tokio = { version = "1", features = ["full"] }
+reqwest = "0.11.12"
+
+[workspace]
+members = ["open-meteo"]
