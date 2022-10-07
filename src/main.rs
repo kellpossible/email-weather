@@ -1,6 +1,11 @@
-use std::{path::Path, str::FromStr};
+use std::{path::PathBuf, str::FromStr};
 
-use email_weather::{process::process_emails, receive::receive_emails, reply::send_replies};
+use email_weather::{
+    fs,
+    process::process_emails,
+    receive::{receive_emails, ImapSecrets},
+    reply::send_replies,
+};
 use eyre::Context;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
@@ -29,18 +34,38 @@ async fn main() -> eyre::Result<()> {
             .expect("failed to send shutdown broadcast");
     });
 
-    let data_path = Path::new("data");
-    if !data_path.exists() {
-        std::fs::create_dir(data_path).wrap_err("unable to create data/ directory")?;
-    }
-    let process_queue_path = data_path.join("process");
-    let reply_queue_path = data_path.join("reply");
-    let (process_sender, process_receiver) =
-        yaque::channel(process_queue_path).wrap_err("unable to create emails queue")?;
-    let (reply_sender, reply_receiver) =
-        yaque::channel(reply_queue_path).wrap_err("unable to create dispatch queue")?;
+    let data_dir = std::env::var("DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("data"));
 
-    let receive_join = tokio::spawn(receive_emails(process_sender, emails_receive_shutdown_rx));
+    fs::create_dir_if_not_exists(&data_dir)
+        .wrap_err_with(|| format!("Unable to create data directory {:?}", data_dir))?;
+
+    let secrets_dir = std::env::var("SECRETS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("secrets"));
+
+    fs::create_dir_if_not_exists(&secrets_dir)
+        .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
+
+    // install_secrets().wrap_err("Error while installing secrets")?;
+
+    let process_queue_path = data_dir.join("process");
+    let reply_queue_path = data_dir.join("reply");
+    let (process_sender, process_receiver) = yaque::channel(&process_queue_path)
+        .wrap_err_with(|| format!("Unable to create process queue at {:?}", process_queue_path))?;
+    let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
+        .wrap_err_with(|| format!("Unable to create reply queue at {:?}", reply_queue_path))?;
+
+    let imap_secrets = ImapSecrets::initialize(&secrets_dir)
+        .await
+        .wrap_err("Error while initializing imap secrets")?;
+
+    let receive_join = tokio::spawn(receive_emails(
+        process_sender,
+        emails_receive_shutdown_rx,
+        imap_secrets,
+    ));
     let process_join = tokio::spawn(process_emails(
         process_receiver,
         reply_sender,

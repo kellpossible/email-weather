@@ -1,0 +1,25 @@
+version: "3.9"  # optional since v1.27.0
+services:
+  email-weather:
+    build: .
+    secrets:
+      - clientsecret.json
+      - tokencache.json
+    volumes:
+      - type: volume
+        source: data-volume
+        target: /data-volume
+        volume:
+          nocopy: true
+    environment:
+      DATA_DIR: /data-volume
+      SECRETS_DIR: /tmp/secrets
+
+volumes:
+  data-volume:
+
+secrets:
+  clientsecret.json:
+    file: ./secrets/clientsecret.json
+  tokencache.json:
+    file: ./secrets/tokencache.json

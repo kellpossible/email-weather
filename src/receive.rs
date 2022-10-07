@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use async_imap::types::Fetch;
 use eyre::Context;
@@ -9,9 +12,9 @@ use tokio::{
     sync::Mutex,
 };
 use tracing::Instrument;
-use yup_oauth2::InstalledFlowAuthenticator;
+use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator};
 
-use crate::inreach;
+use crate::{fs, inreach};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Email {
@@ -153,7 +156,87 @@ where
     }
 }
 
-async fn receive_emails_impl(process_sender: yaque::Sender) -> eyre::Result<()> {
+pub struct ImapSecrets {
+    pub token_cache_path: PathBuf,
+    pub client_secret: ApplicationSecret,
+}
+
+impl ImapSecrets {
+    /// Initializes secrets required for accessing IMAP.
+    ///
+    /// + If `CLIENT_SECRET` environment variable is set, the contents will be parsed, otherwise it
+    ///   will be read from `clientsecret.json` in the specified `secrets_dir` directory.
+    /// + If `TOKEN_CACHE` environment variable is set, the contents will be written to
+    ///   `tokencache.json` inside the specified `secrets_dir` directory. If the file already
+    ///   exists then a warning will be logged. If the environment variable is not set, then the
+    ///   [`yup_oauth2`] library will initialize the cache automatically using the interactive
+    ///   Installed flow.
+    /// + `secrets_dir` needs to exist and have read/write permissions for this application.
+    pub async fn initialize(secrets_dir: &Path) -> eyre::Result<Self> {
+        let client_secret = match std::env::var("CLIENT_SECRET") {
+            Ok(client_secret) => {
+                tracing::debug!("Reading client secret from CLIENT_SECRET environment variable.");
+                yup_oauth2::parse_application_secret(client_secret).wrap_err(
+                    "Unable to parse client secret from CLIENT_SECRET environment variable",
+                )
+            }
+            Err(std::env::VarError::NotPresent) => {
+                let secret_path = secrets_dir.join("clientsecret.json");
+                tracing::debug!("Reading client secret from file {:?}", &secret_path);
+                yup_oauth2::read_application_secret(&secret_path)
+                    .await
+                    .wrap_err_with(|| {
+                        format!("Error reading oauth2 secret from file {:?}", secret_path)
+                    })
+            }
+            Err(unexpected) => Err(eyre::Error::from(unexpected))
+                .wrap_err("Error attempting to read CLIENT_SECRET environment variable"),
+        }
+        .wrap_err("Error reading oauth2 client secret")?;
+
+        let token_cache_path = secrets_dir.join("tokencache.json");
+        match std::env::var("TOKEN_CACHE") {
+            Ok(secret) => {
+                tracing::debug!("Reading token cache from TOKEN_CACHE environment variable.");
+                if token_cache_path.exists() {
+                    tracing::warn!(
+                        "Secret file {:?} already exists, will not overwrite",
+                        token_cache_path
+                    );
+                } else {
+                    std::fs::write(&token_cache_path, &secret).wrap_err_with(|| {
+                        format!("Error writing token cache file: {:?}", token_cache_path)
+                    })?;
+                }
+            }
+            Err(std::env::VarError::NotPresent) => {
+                if token_cache_path.exists() {
+                    tracing::debug!(
+                        "Pre-existing token cache file {:?} will be used",
+                        token_cache_path
+                    );
+                } else {
+                    tracing::debug!("Token cache {:?} will be automatically generated with Installed OAUTH2 flow", token_cache_path);
+                }
+            }
+            Err(unexpected) => {
+                return Err(unexpected).wrap_err_with(|| {
+                    format!("Error while reading TOKEN_CACHE environment variable")
+                })
+            }
+        }
+
+        Ok(Self {
+            token_cache_path,
+            client_secret,
+        })
+    }
+}
+
+async fn receive_emails_impl(
+    process_sender: yaque::Sender,
+    imap_secrets: ImapSecrets,
+) -> eyre::Result<()> {
     tracing::debug!("Starting receiving emails job");
     let process_sender = Arc::new(Mutex::new(process_sender));
     let tls = async_native_tls::TlsConnector::new();
@@ -161,15 +244,11 @@ async fn receive_emails_impl(process_sender: yaque::Sender) -> eyre::Result<()> 
     let imap_domain = "imap.gmail.com";
     let imap_username = "email.weather.service@gmail.com";
 
-    let secret = yup_oauth2::read_application_secret("secrets/clientsecret.json")
-        .await
-        .wrap_err("Error reading oauth2 secret `secrets/clientsecret.json`")?;
-
     let auth = InstalledFlowAuthenticator::builder(
-        secret,
+        imap_secrets.client_secret,
         yup_oauth2::InstalledFlowReturnMethod::Interactive,
     )
-    .persist_tokens_to_disk("secrets/tokencache.json")
+    .persist_tokens_to_disk(imap_secrets.token_cache_path)
     .build()
     .await
     .wrap_err("Error running OAUTH2 installed flow")?;
@@ -216,16 +295,17 @@ async fn receive_emails_impl(process_sender: yaque::Sender) -> eyre::Result<()> 
     Ok(())
 }
 
-#[tracing::instrument(skip(process_sender, shutdown_rx))]
+#[tracing::instrument(skip(process_sender, shutdown_rx, imap_secrets))]
 pub async fn receive_emails(
     process_sender: yaque::Sender,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    imap_secrets: ImapSecrets,
 ) -> eyre::Result<()> {
     tokio::select! {
         result = shutdown_rx.recv() => {
             tracing::debug!("Received shutdown broadcast");
             result.map_err(eyre::Error::from)
         }
-        result = receive_emails_impl(process_sender) => result
+        result = receive_emails_impl(process_sender, imap_secrets) => result
     }
 }
