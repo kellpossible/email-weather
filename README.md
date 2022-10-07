@@ -1,4 +1,4 @@
-# Email Weather
+# Email Weather [![github actions badge](https://github.com/kellpossible/email-weather/actions/workflows/rust.yml/badge.svg)](https://github.com/kellpossible/email-weather/actions/workflows/rust.yml) [![github actions scheduled audit badge](https://github.com/kellpossible/email-weather/actions/workflows/scheduled-audit.yml/badge.svg)](https://github.com/kellpossible/email-weather/actions/workflows/scheduled-audit.yml) [![dependency status](https://deps.rs/repo/github/kellpossible/email-weather/status.svg)](https://deps.rs/repo/github/kellpossible/email-weather)
 
 ## Idea
 
