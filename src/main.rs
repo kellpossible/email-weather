@@ -4,7 +4,7 @@ use async_imap::types::Fetch;
 use chrono_tz::OffsetComponents;
 use email_weather::inreach;
 use eyre::Context;
-use futures::{StreamExt, TryStreamExt};
+use futures::{Future, StreamExt, TryStreamExt};
 use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone, WeatherCode};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -143,25 +143,25 @@ where
 }
 
 async fn receive_emails_poll_inbox_loop<T>(
-    emails_sender: Arc<Mutex<yaque::Sender>>,
+    process_sender: Arc<Mutex<yaque::Sender>>,
     imap_session: &mut async_imap::Session<T>,
 ) -> eyre::Result<()>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + std::fmt::Debug,
 {
     loop {
-        receive_emails_poll_inbox(emails_sender.clone(), imap_session).await?;
+        receive_emails_poll_inbox(process_sender.clone(), imap_session).await?;
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
     }
 }
 
-#[tracing::instrument(skip(emails_sender, shutdown_rx))]
+#[tracing::instrument(skip(process_sender, shutdown_rx))]
 async fn receive_emails(
-    emails_sender: yaque::Sender,
+    process_sender: yaque::Sender,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
 ) -> eyre::Result<()> {
     tracing::debug!("Starting receiving emails job");
-    let emails_sender = Arc::new(Mutex::new(emails_sender));
+    let process_sender = Arc::new(Mutex::new(process_sender));
     let tls = async_native_tls::TlsConnector::new();
 
     let imap_domain = "imap.gmail.com";
@@ -210,7 +210,7 @@ async fn receive_emails(
             tracing::debug!("Received shutdown broadcast");
             result.map_err(eyre::Error::from)
         }
-        result = receive_emails_poll_inbox_loop(emails_sender, &mut imap_session) => result
+        result = receive_emails_poll_inbox_loop(process_sender, &mut imap_session) => result
     }?;
 
     tracing::info!("Logging out of IMAP session");
@@ -221,12 +221,12 @@ async fn receive_emails(
 }
 
 async fn process_emails_impl(
-    mut emails_receiver: yaque::Receiver,
-    mut reply_sender: yaque::Sender,
+    process_receiver: &mut yaque::Receiver,
+    reply_sender: &mut yaque::Sender,
     http_client: reqwest::Client,
 ) -> eyre::Result<()> {
     loop {
-        let received = emails_receiver.recv().await?;
+        let received = process_receiver.recv().await?;
         let received_email: Email = serde_json::from_slice(&*received)?;
 
         let (latitude, longitude): (f32, f32) = match &received_email {
@@ -390,25 +390,31 @@ enum Reply {
     InReach(InReachReply),
 }
 
-#[tracing::instrument(skip(emails_receiver, reply_sender, shutdown_rx, http_client))]
+#[tracing::instrument(skip(process_receiver, reply_sender, shutdown_rx, http_client))]
 async fn process_emails(
-    emails_receiver: yaque::Receiver,
+    process_receiver: yaque::Receiver,
     reply_sender: yaque::Sender,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
-) -> eyre::Result<()> {
+) {
     tracing::debug!("Starting processing emails job");
-    tokio::select! {
-        result = shutdown_rx.recv() => {
-            tracing::debug!("Received shutdown broadcast");
-            result.map_err(eyre::Error::from)
-        }
-        result = process_emails_impl(emails_receiver, reply_sender, http_client) => { result }
-    }
+    let queues = Arc::new(Mutex::new((process_receiver, reply_sender)));
+    run_retry_log_errors(
+        move || {
+            let queues = queues.clone();
+            let http_client = http_client.clone();
+            async move {
+                let (process_receiver, reply_sender) = &mut *queues.lock().await;
+                process_emails_impl(process_receiver, reply_sender, http_client).await
+            }
+        },
+        shutdown_rx,
+    )
+    .await
 }
 
 async fn send_replies_impl(
-    mut reply_receiver: yaque::Receiver,
+    reply_receiver: &mut yaque::Receiver,
     http_client: reqwest::Client,
 ) -> eyre::Result<()> {
     loop {
@@ -432,16 +438,47 @@ async fn send_replies_impl(
 #[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client))]
 async fn send_replies(
     reply_receiver: yaque::Receiver,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
-) -> eyre::Result<()> {
-    tracing::debug!("Starting processing emails job");
+) {
+    let reply_receiver = Arc::new(Mutex::new(reply_receiver));
+    tracing::debug!("Starting send replies job");
+    run_retry_log_errors(
+        move || {
+            let http_client = http_client.clone();
+            let reply_receiver = reply_receiver.clone();
+            async move {
+                let mut reply_receiver = reply_receiver.lock().await;
+                send_replies_impl(&mut reply_receiver, http_client.clone()).await
+            }
+        },
+        shutdown_rx,
+    )
+    .await
+}
+
+async fn run_retry_log_errors<F, FUT>(run: F, mut shutdown_rx: tokio::sync::broadcast::Receiver<()>)
+where
+    F: Fn() -> FUT,
+    FUT: Future<Output = eyre::Result<()>>,
+{
+    let run_loop = async move {
+        loop {
+            if let Err(error) = run().await {
+                tracing::error!("{}", error);
+            };
+        }
+    };
+
     tokio::select! {
         result = shutdown_rx.recv() => {
             tracing::debug!("Received shutdown broadcast");
-            result.map_err(eyre::Error::from)
+            let result = result.wrap_err("Error receiving shutdown message");
+            if let Err(error) = &result {
+                tracing::error!("{:?}", error)
+            }
         }
-        result = send_replies_impl(reply_receiver, http_client) => { result }
+        _ = run_loop => {}
     }
 }
 
@@ -474,16 +511,16 @@ async fn main() -> eyre::Result<()> {
     if !data_path.exists() {
         std::fs::create_dir(data_path).wrap_err("unable to create data/ directory")?;
     }
-    let emails_queue_path = data_path.join("emails");
+    let process_queue_path = data_path.join("process");
     let reply_queue_path = data_path.join("reply");
-    let (emails_sender, emails_receiver) =
-        yaque::channel(emails_queue_path).wrap_err("unable to create emails queue")?;
+    let (process_sender, process_receiver) =
+        yaque::channel(process_queue_path).wrap_err("unable to create emails queue")?;
     let (reply_sender, reply_receiver) =
         yaque::channel(reply_queue_path).wrap_err("unable to create dispatch queue")?;
 
-    let receive_join = tokio::spawn(receive_emails(emails_sender, emails_receive_shutdown_rx));
+    let receive_join = tokio::spawn(receive_emails(process_sender, emails_receive_shutdown_rx));
     let process_join = tokio::spawn(process_emails(
-        emails_receiver,
+        process_receiver,
         reply_sender,
         emails_process_shutdown_rx,
         http_client.clone(),
@@ -497,8 +534,8 @@ async fn main() -> eyre::Result<()> {
     // TODO: perhaps use a select here instead? What happens if failure occurs during setup before
     // running properly actually starts?
     receive_join.await??;
-    process_join.await??;
-    reply_join.await??;
+    process_join.await?;
+    reply_join.await?;
 
     Ok(())
 }
