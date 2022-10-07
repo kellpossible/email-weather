@@ -1,3 +1,5 @@
+//! See [`receive_emails()`].
+
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -14,7 +16,7 @@ use tokio::{
 use tracing::Instrument;
 use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator};
 
-use crate::{fs, inreach};
+use crate::inreach;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Email {
@@ -295,6 +297,7 @@ async fn receive_emails_impl(
     Ok(())
 }
 
+/// This function spawns a task to receive emails via IMAP, and submit them for processing.
 #[tracing::instrument(skip(process_sender, shutdown_rx, imap_secrets))]
 pub async fn receive_emails(
     process_sender: yaque::Sender,

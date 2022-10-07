@@ -1,3 +1,5 @@
+//! Send a reply to an email form an inreach device.
+
 use std::{borrow::Cow, collections::HashMap, convert::TryFrom};
 
 use eyre::Context;
@@ -5,8 +7,11 @@ use reqwest::Response;
 use serde::Serialize;
 use uuid::Uuid;
 
+/// Referral from the originally received email being replied to.
 pub struct Referral {
+    /// Id of the message being replied to?
     pub ext_id: Uuid,
+    /// Address of the inreach?
     pub adr: String,
 }
 
@@ -58,6 +63,8 @@ fn extract_message_id(html: &str) -> eyre::Result<String> {
     Ok(message_id.to_string())
 }
 
+/// Send a reply to an email received from an inreach device via the inreach web interface using
+/// the referral url provided in the original email.
 #[tracing::instrument(skip(client, referral_url, message))]
 pub async fn reply(
     client: &reqwest::Client,

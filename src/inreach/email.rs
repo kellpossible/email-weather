@@ -1,14 +1,21 @@
+//! Parsing emails received from an inreach device.
+
 use eyre::Context;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+/// An email received from an inreach device.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Email {
+    /// The name of the person who sent the message.
     pub from_name: String,
+    /// The url used to send a reply to the message via the inreach web interface.
     pub referral_url: url::Url,
+    /// Latitude in degrees of inreach device when it sent the message.
     pub latitude: f32,
+    /// Longitude in degrees of inreach device when it sent the message.
     pub longitude: f32,
 }
 

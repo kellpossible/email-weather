@@ -1,3 +1,5 @@
+//! See [`process_emails()`].
+
 use std::{collections::HashSet, sync::Arc};
 
 use chrono_tz::OffsetComponents;
@@ -170,6 +172,8 @@ async fn process_emails_impl(
     }
 }
 
+/// This function spawns a task to process an incoming email, create a customized forecast that it
+/// requested, and dispatch a reply.
 #[tracing::instrument(skip(process_receiver, reply_sender, shutdown_rx, http_client))]
 pub async fn process_emails(
     process_receiver: yaque::Receiver,

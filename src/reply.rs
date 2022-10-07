@@ -1,3 +1,5 @@
+//! See [`send_replies()`].
+
 use std::sync::Arc;
 
 use eyre::Context;
@@ -28,6 +30,7 @@ async fn send_replies_impl(
         match reply {
             Reply::InReach(reply) => {
                 tracing::info!("Sending reply: {:?}", reply);
+                // TODO: re-enable
                 // inreach::reply::reply(&http_client, &reply.referral_url, &reply.message)
                 //     .await
                 //     .wrap_err("Error sending reply message")?;
@@ -39,6 +42,8 @@ async fn send_replies_impl(
     }
 }
 
+/// This function spawns a task to send replies to received emails using the results of
+/// [`crate::processing`].
 #[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client))]
 pub async fn send_replies(
     reply_receiver: yaque::Receiver,

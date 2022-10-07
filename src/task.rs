@@ -1,6 +1,11 @@
+//! Utilitis for executing/spawning async tasks.
+
 use eyre::Context;
 use futures::Future;
 
+/// In a loop, runs a future created by `run`, logs an error if it occurs. In parallel using a
+/// `select!`, it listens to `shutdown_rx` and cancels the loop if a shutdown message has been
+/// broadcast.
 pub async fn run_retry_log_errors<F, FUT>(
     run: F,
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
