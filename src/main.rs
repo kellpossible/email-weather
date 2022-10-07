@@ -11,7 +11,7 @@ use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::Subs
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let rust_log_env: String = std::env::var("RUST_LOG").unwrap_or("debug".to_string());
+    let rust_log_env: String = std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string());
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::EnvFilter::from_str(rust_log_env.as_str()).unwrap_or_default())

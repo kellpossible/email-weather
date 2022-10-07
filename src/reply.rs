@@ -9,14 +9,14 @@ use tokio::sync::Mutex;
 use crate::{inreach, task::run_retry_log_errors};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct InReachReply {
+pub struct InReach {
     pub referral_url: url::Url,
     pub message: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Reply {
-    InReach(InReachReply),
+    InReach(InReach),
 }
 
 async fn send_replies_impl(
@@ -63,5 +63,5 @@ pub async fn send_replies(
         },
         shutdown_rx,
     )
-    .await
+    .await;
 }

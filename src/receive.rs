@@ -86,22 +86,19 @@ where
                             .get_header("From")
                             .ok_or_else(|| eyre::eyre!("No From header for message"))?;
 
-                        let from_address = match from_header {
-                            mail_parser::HeaderValue::Address(address) => {
-                                address.address.as_ref().ok_or_else(|| {
-                                    eyre::eyre!(
-                                        "From header is missing the email address: {:?}",
-                                        from_header
-                                    )
-                                })?
-                            }
-                            _ => {
-                                tracing::debug!(
-                                    "Skipping message due to unexpected From header value: {:?}",
+                        let from_address = if let mail_parser::HeaderValue::Address(address) = from_header {
+                            address.address.as_ref().ok_or_else(|| {
+                                eyre::eyre!(
+                                    "From header is missing the email address: {:?}",
                                     from_header
-                                );
-                                return Ok(());
-                            }
+                                )
+                            })?
+                        } else {
+                            tracing::debug!(
+                                "Skipping message due to unexpected From header value: {:?}",
+                                from_header
+                            );
+                            return Ok(());
                         };
 
                         if from_address.as_ref() != "no.reply.inreach@garmin.com" {
@@ -222,9 +219,8 @@ impl ImapSecrets {
                 }
             }
             Err(unexpected) => {
-                return Err(unexpected).wrap_err_with(|| {
-                    format!("Error while reading TOKEN_CACHE environment variable")
-                })
+                return Err(unexpected)
+                    .wrap_err("Error while reading TOKEN_CACHE environment variable");
             }
         }
 

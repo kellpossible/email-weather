@@ -49,7 +49,7 @@ struct PostFormData<'a> {
 
 /// Extract message id from the GET response body
 fn extract_message_id(html: &str) -> eyre::Result<String> {
-    let document = scraper::Html::parse_document(&html);
+    let document = scraper::Html::parse_document(html);
     let selector =
         scraper::Selector::parse("#MessageId").expect("Unable to parse MessageId selector");
     let element_ref = document

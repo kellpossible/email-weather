@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     receive::Email,
-    reply::{InReachReply, Reply},
+    reply::{InReach, Reply},
     task::run_retry_log_errors,
 };
 
@@ -99,7 +99,7 @@ async fn process_emails_impl(
         }
 
         let formatted_offset: String = if total_offset.is_zero() {
-            format!("GMT")
+            "GMT".to_string()
         } else {
             let formatted_duration = format!(
                 "{:02}:{:02}",
@@ -152,14 +152,14 @@ async fn process_emails_impl(
             }
 
             if i > 0 {
-                message.push('\n')
+                message.push('\n');
             }
             message.push_str(&m);
         }
         tracing::info!("message (len: {}):\n{}", message.len(), message);
 
         let reply = match received_email {
-            Email::Inreach(email) => Reply::InReach(InReachReply {
+            Email::Inreach(email) => Reply::InReach(InReach {
                 referral_url: email.referral_url,
                 message,
             }),
@@ -194,5 +194,5 @@ pub async fn process_emails(
         },
         shutdown_rx,
     )
-    .await
+    .await;
 }

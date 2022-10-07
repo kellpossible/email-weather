@@ -26,7 +26,7 @@ pub async fn run_retry_log_errors<F, FUT>(
             tracing::debug!("Received shutdown broadcast");
             let result = result.wrap_err("Error receiving shutdown message");
             if let Err(error) = &result {
-                tracing::error!("{:?}", error)
+                tracing::error!("{:?}", error);
             }
         }
         _ = run_loop => {}
