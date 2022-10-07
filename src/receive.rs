@@ -153,11 +153,7 @@ where
     }
 }
 
-#[tracing::instrument(skip(process_sender, shutdown_rx))]
-pub async fn receive_emails(
-    process_sender: yaque::Sender,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
-) -> eyre::Result<()> {
+async fn receive_emails_impl(process_sender: yaque::Sender) -> eyre::Result<()> {
     tracing::debug!("Starting receiving emails job");
     let process_sender = Arc::new(Mutex::new(process_sender));
     let tls = async_native_tls::TlsConnector::new();
@@ -203,17 +199,33 @@ pub async fn receive_emails(
     // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
     tracing::info!("Successful imap session login");
 
-    tokio::select! {
-        result = shutdown_rx.recv() => {
-            tracing::debug!("Received shutdown broadcast");
-            result.map_err(eyre::Error::from)
+    loop {
+        match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await {
+            Ok(_) => break,
+            Err(error) => {
+                tracing::error!("{:?}", error);
+                tracing::warn!("Retrying...");
+            }
         }
-        result = receive_emails_poll_inbox_loop(process_sender, &mut imap_session) => result
-    }?;
+    }
 
     tracing::info!("Logging out of IMAP session");
 
     imap_session.logout().await?;
 
     Ok(())
+}
+
+#[tracing::instrument(skip(process_sender, shutdown_rx))]
+pub async fn receive_emails(
+    process_sender: yaque::Sender,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+) -> eyre::Result<()> {
+    tokio::select! {
+        result = shutdown_rx.recv() => {
+            tracing::debug!("Received shutdown broadcast");
+            result.map_err(eyre::Error::from)
+        }
+        result = receive_emails_impl(process_sender) => result
+    }
 }
