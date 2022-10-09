@@ -1,0 +1,14 @@
+app = "email-weather"
+
+[build]
+# If your Dockerfile has multiple stages, you can specify one as the target for
+# deployment. The target stage must have a CMD or ENTRYPOINT set.
+build-target = "deploy"
+
+[env]
+SECRETS_DIR = "/tmp/secrets"
+DATA_DIR = "/data-volume"
+
+[mounts]
+source = "email_weather_data"
+destination = "/data-volume"
