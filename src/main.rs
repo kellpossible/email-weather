@@ -26,7 +26,7 @@ async fn main() -> eyre::Result<()> {
 
     let rust_log_env: String =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "warn,email_weather=debug".to_string());
-   
+
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::EnvFilter::from_str(rust_log_env.as_str()).unwrap_or_default())

@@ -166,8 +166,8 @@ pub async fn reply(
         );
     }
 
-    println!("POST status: {:?}", post_response.status());
-    println!("POST response:\n{}", post_response.text().await?);
+    tracing::debug!("POST status: {:?}", post_response.status());
+    tracing::debug!("POST response:\n{}", post_response.text().await?);
 
     Ok(())
 }
