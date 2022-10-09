@@ -7,6 +7,7 @@ use email_weather::{
     reply::send_replies,
 };
 use eyre::Context;
+use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -24,12 +25,26 @@ async fn main() -> eyre::Result<()> {
     let emails_process_shutdown_rx = shutdown_tx.subscribe();
     let send_replies_shutdown_rx = shutdown_tx.subscribe();
 
+    let ctrl_c_shutdown_tx = shutdown_tx.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
-            .expect("failed to listen to ctrl-c event");
-        tracing::warn!("ctrl-c event detected, broadcasting shutdown");
-        shutdown_tx
+            .expect("failed to listen to ctrl-c or SIGINT event");
+        tracing::warn!("ctrl-c or SIGINT event detected, broadcasting shutdown");
+        ctrl_c_shutdown_tx 
+            .send(())
+            .expect("failed to send shutdown broadcast");
+    });
+
+    let sigterm_shutdown_tx = shutdown_tx.clone();
+    tokio::spawn(async move {
+        tokio::signal::unix::signal(SignalKind::terminate())
+            .expect("failed to create SIGTERM signal listener")
+            .recv()
+            .await
+            .expect("failed to listen to SIGTERM signal");
+        tracing::warn!("SIGTERM signal detected, broadcasting shutdown");
+        sigterm_shutdown_tx 
             .send(())
             .expect("failed to send shutdown broadcast");
     });

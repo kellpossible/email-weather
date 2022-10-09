@@ -33,8 +33,8 @@ RUN cargo build --target x86_64-unknown-linux-musl --release
 FROM alpine AS deploy
 
 # Import from builder.
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
+# COPY --from=builder /etc/passwd /etc/passwd
+# COPY --from=builder /etc/group /etc/group
 
 WORKDIR /email-weather
 
@@ -44,4 +44,5 @@ COPY --from=builder /email-weather/target/x86_64-unknown-linux-musl/release/emai
 # Use an unprivileged user.
 # USER emailweather:emailweather
 
+STOPSIGNAL SIGINT
 CMD ["/email-weather/email-weather"]
