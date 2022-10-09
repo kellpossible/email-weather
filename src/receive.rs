@@ -46,8 +46,8 @@ async fn receive_emails_poll_inbox<T>(
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + std::fmt::Debug,
 {
+    tracing::trace!("Polling IMAP INBOX");
     imap_session.select("INBOX").await?;
-    tracing::debug!("IMAP INBOX selected");
 
     let sequence_set: Vec<String> = imap_session
         .search("UNSEEN")
@@ -57,9 +57,8 @@ where
         .map(ToString::to_string)
         .collect();
 
-    tracing::debug!("Obtained UNSEEN messages: {:?}", sequence_set);
-
     if !sequence_set.is_empty() {
+        tracing::debug!("Obtained UNSEEN messages: {:?}", sequence_set);
         let fetch_sequences: String = sequence_set.join(",");
         {
             let fetch_stream = imap_session.fetch(fetch_sequences, "RFC822").await?;

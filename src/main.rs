@@ -12,13 +12,34 @@ use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::Subs
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let rust_log_env: String = std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string());
+    let sentry_guard = if let Ok(sentry_dsn) = std::env::var("SENTRY_DSN") {
+        Some(sentry::init(sentry::ClientOptions {
+            dsn: Some(sentry_dsn.parse().unwrap()),
+            release: sentry::release_name!(),
+            // TODO: set this lower for production
+            traces_sample_rate: 1.0,
+            ..sentry::ClientOptions::default()
+        }))
+    } else {
+        None
+    };
+
+    let rust_log_env: String =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "warn,email_weather=debug".to_string());
+   
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::EnvFilter::from_str(rust_log_env.as_str()).unwrap_or_default())
         .with(tracing_error::ErrorLayer::default())
+        .with(sentry_guard.as_ref().map(|_| sentry_tracing::layer()))
         .init();
+
     color_eyre::install()?;
+
+    if sentry_guard.is_some() {
+        tracing::info!("sentry.io reporting is enabled");
+    }
+
     let http_client = reqwest::Client::new();
 
     let (shutdown_tx, emails_receive_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
@@ -31,7 +52,7 @@ async fn main() -> eyre::Result<()> {
             .await
             .expect("failed to listen to ctrl-c or SIGINT event");
         tracing::warn!("ctrl-c or SIGINT event detected, broadcasting shutdown");
-        ctrl_c_shutdown_tx 
+        ctrl_c_shutdown_tx
             .send(())
             .expect("failed to send shutdown broadcast");
     });
@@ -44,7 +65,7 @@ async fn main() -> eyre::Result<()> {
             .await
             .expect("failed to listen to SIGTERM signal");
         tracing::warn!("SIGTERM signal detected, broadcasting shutdown");
-        sigterm_shutdown_tx 
+        sigterm_shutdown_tx
             .send(())
             .expect("failed to send shutdown broadcast");
     });

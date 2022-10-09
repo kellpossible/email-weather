@@ -30,7 +30,6 @@ async fn send_replies_impl(
         match reply {
             Reply::InReach(reply) => {
                 tracing::info!("Sending reply: {:?}", reply);
-                // TODO: re-enable
                 inreach::reply::reply(&http_client, &reply.referral_url, &reply.message)
                     .await
                     .wrap_err("Error sending reply message")?;
