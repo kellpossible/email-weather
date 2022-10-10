@@ -7,12 +7,16 @@ use email_weather::{
     reply::send_replies,
 };
 use eyre::Context;
+use sentry::ClientInitGuard;
 use tokio::signal::unix::SignalKind;
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    let sentry_guard = if let Ok(sentry_dsn) = std::env::var("SENTRY_DSN") {
+struct ReportingGuard {
+    sentry: Option<ClientInitGuard>,
+}
+
+fn setup_reporting() -> eyre::Result<ReportingGuard> {
+    let sentry = if let Ok(sentry_dsn) = std::env::var("SENTRY_DSN") {
         Some(sentry::init(sentry::ClientOptions {
             dsn: Some(sentry_dsn.parse().unwrap()),
             release: sentry::release_name!(),
@@ -31,14 +35,31 @@ async fn main() -> eyre::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::EnvFilter::from_str(rust_log_env.as_str()).unwrap_or_default())
         .with(tracing_error::ErrorLayer::default())
-        .with(sentry_guard.as_ref().map(|_| sentry_tracing::layer()))
+        .with(sentry.as_ref().map(|_| sentry_tracing::layer()))
         .init();
 
-    color_eyre::install()?;
+    let (eyre_panic_hook, eyre_hook) = color_eyre::config::HookBuilder::new().into_hooks();
+    let eyre_panic_hook = eyre_panic_hook.into_panic_hook();
+    eyre::set_hook(eyre_hook.into_eyre_hook())?;
 
-    if sentry_guard.is_some() {
+    let sentry_enabled: bool = sentry.is_some();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        eyre_panic_hook(panic_info);
+        if sentry_enabled {
+            sentry::integrations::panic::panic_handler(panic_info);
+        }
+    }));
+
+    if sentry_enabled {
         tracing::info!("sentry.io reporting is enabled");
     }
+
+    Ok(ReportingGuard { sentry })
+}
+
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
+    let _reporting_guard = setup_reporting()?;
 
     let http_client = reqwest::Client::new();
 
