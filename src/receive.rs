@@ -39,6 +39,7 @@ impl async_imap::Authenticator for &GmailOAuth2 {
     }
 }
 
+// TODO: handle expected IMAP errors more gracefully
 async fn receive_emails_poll_inbox<T>(
     emails_sender: Arc<Mutex<yaque::Sender>>,
     imap_session: &mut async_imap::Session<T>,
