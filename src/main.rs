@@ -45,9 +45,9 @@ fn setup_reporting() -> eyre::Result<ReportingGuard> {
     let sentry_enabled: bool = sentry.is_some();
     std::panic::set_hook(Box::new(move |panic_info| {
         eyre_panic_hook(panic_info);
-        if sentry_enabled {
-            sentry::integrations::panic::panic_handler(panic_info);
-        }
+        // if sentry_enabled {
+        //     sentry::integrations::panic::panic_handler(panic_info);
+        // }
     }));
 
     if sentry_enabled {
