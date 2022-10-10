@@ -291,10 +291,12 @@ pub async fn receive_emails(
     imap_secrets: &ImapSecrets,
 ) {
     let process_sender = Arc::new(Mutex::new(process_sender));
-    run_retry_log_errors(move || {
-        let process_sender = process_sender.clone();
-        async move {
-            receive_emails_impl(process_sender, imap_secrets).await
-        }
-    }, shutdown_rx).await
+    run_retry_log_errors(
+        move || {
+            let process_sender = process_sender.clone();
+            async move { receive_emails_impl(process_sender, imap_secrets).await }
+        },
+        shutdown_rx,
+    )
+    .await
 }
