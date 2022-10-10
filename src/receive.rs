@@ -16,7 +16,7 @@ use tokio::{
 use tracing::Instrument;
 use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator};
 
-use crate::inreach;
+use crate::{inreach, task::run_retry_log_errors};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Email {
@@ -231,21 +231,20 @@ impl ImapSecrets {
 }
 
 async fn receive_emails_impl(
-    process_sender: yaque::Sender,
-    imap_secrets: ImapSecrets,
+    process_sender: Arc<Mutex<yaque::Sender>>,
+    imap_secrets: &ImapSecrets,
 ) -> eyre::Result<()> {
     tracing::debug!("Starting receiving emails job");
-    let process_sender = Arc::new(Mutex::new(process_sender));
     let tls = async_native_tls::TlsConnector::new();
 
     let imap_domain = "imap.gmail.com";
     let imap_username = "email.weather.service@gmail.com";
 
     let auth = InstalledFlowAuthenticator::builder(
-        imap_secrets.client_secret,
+        imap_secrets.client_secret.clone(),
         yup_oauth2::InstalledFlowReturnMethod::Interactive,
     )
-    .persist_tokens_to_disk(imap_secrets.token_cache_path)
+    .persist_tokens_to_disk(imap_secrets.token_cache_path.clone())
     .build()
     .await
     .wrap_err("Error running OAUTH2 installed flow")?;
@@ -275,15 +274,7 @@ async fn receive_emails_impl(
     // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
     tracing::info!("Successful imap session login");
 
-    loop {
-        match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await {
-            Ok(_) => break,
-            Err(error) => {
-                tracing::error!("{:?}", error);
-                tracing::warn!("Retrying...");
-            }
-        }
-    }
+    receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await?;
 
     tracing::info!("Logging out of IMAP session");
 
@@ -296,14 +287,14 @@ async fn receive_emails_impl(
 #[tracing::instrument(skip(process_sender, shutdown_rx, imap_secrets))]
 pub async fn receive_emails(
     process_sender: yaque::Sender,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
-    imap_secrets: ImapSecrets,
-) -> eyre::Result<()> {
-    tokio::select! {
-        result = shutdown_rx.recv() => {
-            tracing::debug!("Received shutdown broadcast");
-            result.map_err(eyre::Error::from)
+    shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    imap_secrets: &ImapSecrets,
+) {
+    let process_sender = Arc::new(Mutex::new(process_sender));
+    run_retry_log_errors(move || {
+        let process_sender = process_sender.clone();
+        async move {
+            receive_emails_impl(process_sender, imap_secrets).await
         }
-        result = receive_emails_impl(process_sender, imap_secrets) => result
-    }
+    }, shutdown_rx).await
 }

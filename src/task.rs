@@ -17,6 +17,7 @@ pub async fn run_retry_log_errors<F, FUT>(
         loop {
             if let Err(error) = run().await {
                 tracing::error!("{}", error);
+                tracing::warn!("Retrying...")
             };
         }
     };

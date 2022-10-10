@@ -114,9 +114,11 @@ async fn main() -> eyre::Result<()> {
     let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
         .wrap_err_with(|| format!("Unable to create reply queue at {:?}", reply_queue_path))?;
 
-    let imap_secrets = ImapSecrets::initialize(&secrets_dir)
-        .await
-        .wrap_err("Error while initializing imap secrets")?;
+    let imap_secrets = Box::leak(Box::new(
+        ImapSecrets::initialize(&secrets_dir)
+            .await
+            .wrap_err("Error while initializing imap secrets")?,
+    ));
 
     let receive_join = tokio::spawn(receive_emails(
         process_sender,
@@ -135,7 +137,7 @@ async fn main() -> eyre::Result<()> {
         http_client,
     ));
 
-    receive_join.await??;
+    receive_join.await?;
     process_join.await?;
     reply_join.await?;
 
