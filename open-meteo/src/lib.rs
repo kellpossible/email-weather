@@ -280,13 +280,13 @@ pub struct Hourly {
     /// + Unit: `km/h (mph, m/s, knots)`
     #[serde(rename = "windspeed_10m")]
     pub wind_speed_10m: Option<Vec<f32>>,
-    /// Wind speed at 80 meters above ground. 
+    /// Wind speed at 80 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `km/h (mph, m/s, knots)`
     #[serde(rename = "windspeed_80m")]
     pub wind_speed_80m: Option<Vec<f32>>,
-    /// Wind speed at 120 meters above ground. 
+    /// Wind speed at 120 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `km/h (mph, m/s, knots)`
