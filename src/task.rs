@@ -1,5 +1,7 @@
 //! Utilitis for executing/spawning async tasks.
 
+use std::time::Duration;
+
 use eyre::Context;
 use futures::Future;
 
@@ -17,6 +19,7 @@ pub async fn run_retry_log_errors<F, FUT>(
         loop {
             if let Err(error) = run().await {
                 tracing::error!("{:?}", error);
+                tokio::time::sleep(Duration::from_secs(10)).await;
                 tracing::warn!("Retrying...")
             };
         }

@@ -165,6 +165,33 @@ pub enum HourlyVariable {
     /// Requests [Hourly::cloud_cover_high].
     #[serde(rename = "cloudcover_high")]
     CloudCoverHigh,
+    /// Requests [Hourly::wind_speed_10m].
+    #[serde(rename = "windspeed_10m")]
+    WindSpeed10m,
+    /// Requests [Hourly::wind_speed_80m].
+    #[serde(rename = "windspeed_80m")]
+    WindSpeed80m,
+    /// Requests [Hourly::wind_speed_120m].
+    #[serde(rename = "windspeed_120m")]
+    WindSpeed120m,
+    /// Requests [Hourly::wind_speed_180m].
+    #[serde(rename = "windspeed_180m")]
+    WindSpeed180m,
+    /// Requests [Hourly::wind_direction_10m].
+    #[serde(rename = "winddirection_10m")]
+    WindDirection10m,
+    /// Requests [Hourly::wind_direction_80m].
+    #[serde(rename = "winddirection_80m")]
+    WindDirection80m,
+    /// Requests [Hourly::wind_direction_120m].
+    #[serde(rename = "winddirection_120m")]
+    WindDirection120m,
+    /// Requests [Hourly::wind_direction_180m].
+    #[serde(rename = "winddirection_180m")]
+    WindDirection180m,
+    /// Requests [Hourly::wind_gusts_10m].
+    #[serde(rename = "windgusts_10m")]
+    WindGusts10m,
     // TODO: more fields
     /// Requests [Hourly::precipitation].
     Precipitation,
@@ -247,6 +274,54 @@ pub struct Hourly {
     /// + Unit: `%`
     #[serde(rename = "cloudcover_high")]
     pub cloud_cover_high: Option<Vec<f32>>,
+    /// Wind speed at 10 meters above ground. Wind speed at 10 meters is the standard level.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `km/h (mph, m/s, knots)`
+    #[serde(rename = "windspeed_10m")]
+    pub wind_speed_10m: Option<Vec<f32>>,
+    /// Wind speed at 80 meters above ground. 
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `km/h (mph, m/s, knots)`
+    #[serde(rename = "windspeed_80m")]
+    pub wind_speed_80m: Option<Vec<f32>>,
+    /// Wind speed at 120 meters above ground. 
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `km/h (mph, m/s, knots)`
+    #[serde(rename = "windspeed_120m")]
+    pub wind_speed_120m: Option<Vec<f32>>,
+    /// Wind speed at 180 meters above ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `km/h (mph, m/s, knots)`
+    #[serde(rename = "windspeed_180m")]
+    pub wind_speed_180m: Option<Vec<f32>>,
+    /// Wind direction at 10 meters above the ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `°`
+    #[serde(rename = "winddirection_10m")]
+    pub wind_direction_10m: Option<Vec<f32>>,
+    /// Wind direction at 80 meters above the ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `°`
+    #[serde(rename = "winddirection_80m")]
+    pub wind_direction_80m: Option<Vec<f32>>,
+    /// Wind direction at 120 meters above the ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `°`
+    #[serde(rename = "winddirection_120m")]
+    pub wind_direction_120m: Option<Vec<f32>>,
+    /// Wind direction at 180 meters above the ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `°`
+    #[serde(rename = "winddirection_180m")]
+    pub wind_direction_180m: Option<Vec<f32>>,
     // TODO: more fields
     /// Total precipitation (rain, showers, snow) sum of the preceding hour.
     ///
