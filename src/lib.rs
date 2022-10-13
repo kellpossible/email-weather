@@ -9,4 +9,5 @@ pub mod inreach;
 pub mod process;
 pub mod receive;
 pub mod reply;
+pub mod reporting;
 pub mod task;
