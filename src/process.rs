@@ -1,6 +1,6 @@
 //! See [`process_emails()`].
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, convert::TryFrom, fmt::Display, sync::Arc};
 
 use chrono_tz::OffsetComponents;
 use eyre::Context;
@@ -12,6 +12,67 @@ use crate::{
     reply::{InReach, Reply},
     task::run_retry_log_errors,
 };
+
+#[derive(PartialEq, Debug)]
+enum WindDirection {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
+}
+
+impl TryFrom<f32> for WindDirection {
+    type Error = eyre::Error;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if (0.0 <= value && value < 45.0 / 2.0) || ((360.0 - 45.0 / 2.0) < value && value <= 360.0)
+        {
+            Ok(Self::N)
+        } else if (45.0 / 2.0) <= value && value < (90.0 - 45.0 / 2.0) {
+            Ok(Self::NE)
+        } else if (90.0 - 45.0 / 2.0) <= value && value < (90.0 + 45.0 / 2.0) {
+            Ok(Self::E)
+        } else if (90.0 + 45.0 / 2.0) <= value && value < (180.0 - 45.0 / 2.0) {
+            Ok(Self::SE)
+        } else if (180.0 - 45.0 / 2.0) <= value && value < (180.0 + 45.0 / 2.0) {
+            Ok(Self::S)
+        } else if (180.0 + 45.0 / 2.0) <= value && value < (270.0 - 45.0 / 2.0) {
+            Ok(Self::SW)
+        } else if (270.0 - 45.0 / 2.0) <= value && value < (270.0 + 45.0 / 2.0) {
+            Ok(Self::W)
+        } else if (270.0 + 45.0 / 2.0) <= value && value < (360.0 - 45.0 / 2.0) {
+            Ok(Self::NW)
+        } else {
+            Err(eyre::eyre!(
+                "Unable to parse {} as a valid wind direction",
+                value
+            ))
+        }
+    }
+}
+
+impl Display for WindDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                WindDirection::N => "N",
+                WindDirection::NE => "NE",
+                WindDirection::E => "E",
+                WindDirection::SE => "SE",
+                WindDirection::S => "S",
+                WindDirection::SW => "SW",
+                WindDirection::W => "W",
+                WindDirection::NW => "NW",
+            }
+        )
+    }
+}
 
 async fn process_emails_impl(
     process_receiver: &mut yaque::Receiver,
@@ -29,9 +90,9 @@ async fn process_emails_impl(
         let forecast_parameters = ForecastParameters::builder()
             .latitude(latitude)
             .longitude(longitude)
-            // .hourly_entry(HourlyVariable::Temperature2m)
-            .hourly_entry(HourlyVariable::CloudCover)
             .hourly_entry(HourlyVariable::FreezingLevelHeight)
+            .hourly_entry(HourlyVariable::WindSpeed10m)
+            .hourly_entry(HourlyVariable::WindDirection10m)
             .hourly_entry(HourlyVariable::WeatherCode)
             .hourly_entry(HourlyVariable::Precipitation)
             .timezone(TimeZone::Auto)
@@ -51,28 +112,29 @@ async fn process_emails_impl(
             .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
         let time: &[chrono::NaiveDateTime] = &hourly.time;
 
-        // let temperature: &[f32] = &hourly
-        //     .temperature_2m
-        //     .ok_or_else(|| eyre::eyre!("expected temperature_2m to be present"))?;
+        let freezing_level_height: &[f32] = &hourly
+            .freezing_level_height
+            .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
+        let wind_speed_10m: &[f32] = &hourly
+            .wind_speed_10m
+            .ok_or_else(|| eyre::eyre!("expected wind_speed_10m to be present"))?;
+        let wind_direction_10m: &[f32] = &hourly
+            .wind_direction_10m
+            .ok_or_else(|| eyre::eyre!("expected wind_direction_10m to be present"))?;
         let weather_code: &[WeatherCode] = &hourly
             .weather_code
             .ok_or_else(|| eyre::eyre!("expected weather_code to be present"))?;
         let precipitation: &[f32] = &hourly
             .precipitation
             .ok_or_else(|| eyre::eyre!("expected precipitation to be present"))?;
-        let cloud_cover: &[f32] = &hourly
-            .cloud_cover
-            .ok_or_else(|| eyre::eyre!("expected cloud_cover to be present"))?;
-        let freezing_level_height: &[f32] = &hourly
-            .freezing_level_height
-            .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
 
         if [
             time.len(),
-            // temperature.len(),
-            precipitation.len(),
             freezing_level_height.len(),
-            cloud_cover.len(),
+            wind_speed_10m.len(),
+            wind_direction_10m.len(),
+            weather_code.len(),
+            precipitation.len(),
         ]
         .into_iter()
         .collect::<HashSet<usize>>()
@@ -131,12 +193,13 @@ async fn process_emails_impl(
             if (i - start_i) % 6 == 0 {
                 let formatted_time = time[i].format("%dT%H");
                 messages.push(format!(
-                    "{} F{:.0} C{:.0} W{} P{:.0}",
+                    "{} C{:.0} F{:.0} W{:.0}@{} P{:.0}",
                     formatted_time,
-                    freezing_level_height[i],
-                    cloud_cover[i],
                     weather_code[i] as u8,
-                    acc_precipitation,
+                    freezing_level_height[i].round(),
+                    (wind_speed_10m[i] / 10.0).round(),
+                    (wind_direction_10m[i] / 10.0).round(),
+                    acc_precipitation.round(),
                 ));
                 acc_precipitation = 0.0;
             }
@@ -195,4 +258,39 @@ pub async fn process_emails(
         shutdown_rx,
     )
     .await;
+}
+
+#[cfg(test)]
+mod test {
+    use std::convert::TryFrom;
+
+    use super::WindDirection;
+
+    #[test]
+    fn test_wind_direction_from_float() {
+        assert_eq!(WindDirection::N, WindDirection::try_from(350.0).unwrap());
+        assert_eq!(WindDirection::N, WindDirection::try_from(0.0).unwrap());
+        assert_eq!(WindDirection::N, WindDirection::try_from(10.0).unwrap());
+        assert_eq!(WindDirection::NE, WindDirection::try_from(30.0).unwrap());
+        assert_eq!(WindDirection::NE, WindDirection::try_from(45.0).unwrap());
+        assert_eq!(WindDirection::NE, WindDirection::try_from(50.0).unwrap());
+        assert_eq!(WindDirection::E, WindDirection::try_from(80.0).unwrap());
+        assert_eq!(WindDirection::E, WindDirection::try_from(90.0).unwrap());
+        assert_eq!(WindDirection::E, WindDirection::try_from(100.0).unwrap());
+        assert_eq!(WindDirection::SE, WindDirection::try_from(120.0).unwrap());
+        assert_eq!(WindDirection::SE, WindDirection::try_from(135.0).unwrap());
+        assert_eq!(WindDirection::SE, WindDirection::try_from(140.0).unwrap());
+        assert_eq!(WindDirection::S, WindDirection::try_from(170.0).unwrap());
+        assert_eq!(WindDirection::S, WindDirection::try_from(180.0).unwrap());
+        assert_eq!(WindDirection::S, WindDirection::try_from(190.0).unwrap());
+        assert_eq!(WindDirection::SW, WindDirection::try_from(210.0).unwrap());
+        assert_eq!(WindDirection::SW, WindDirection::try_from(225.0).unwrap());
+        assert_eq!(WindDirection::SW, WindDirection::try_from(235.0).unwrap());
+        assert_eq!(WindDirection::W, WindDirection::try_from(260.0).unwrap());
+        assert_eq!(WindDirection::W, WindDirection::try_from(270.0).unwrap());
+        assert_eq!(WindDirection::W, WindDirection::try_from(280.0).unwrap());
+        assert_eq!(WindDirection::NW, WindDirection::try_from(310.0).unwrap());
+        assert_eq!(WindDirection::NW, WindDirection::try_from(315.0).unwrap());
+        assert_eq!(WindDirection::NW, WindDirection::try_from(325.0).unwrap());
+    }
 }
