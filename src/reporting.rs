@@ -2,7 +2,6 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
 };
 
 use axum::{
@@ -11,7 +10,7 @@ use axum::{
     Router,
 };
 use eyre::Context;
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, TryStreamExt};
 use html_builder::Html5;
 use reqwest::StatusCode;
 use tokio_stream::wrappers::ReadDirStream;
@@ -21,10 +20,11 @@ use tracing_appender::{
 };
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use crate::{fs, task};
+use crate::fs;
 
+/// Options for writing to log file.
 #[derive(Clone)]
-pub struct LogFileOptions {
+struct LogFileOptions {
     /// The directory to store the log files in.
     /// Will be created if it doesn't yet exist.
     pub directory: PathBuf,
@@ -242,8 +242,14 @@ async fn serve_logs_impl(options: &'static ReportingOptions) {
             get(move |filename| async move { serve_log(filename, &log_dir_2).await }),
         );
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::info!("Serving logs on http://{}", addr);
+    let addr: SocketAddr = if let Ok(var) = std::env::var("LISTEN_ADDR") {
+        var.parse()
+            .expect("Error parsing LISTEN_ADDR environment variable")
+    } else {
+        SocketAddr::from(([127, 0, 0, 1], 3000))
+    };
+
+    tracing::info!("Serving logs at http://{}/log", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
@@ -353,7 +359,6 @@ async fn files_stream(
     )
 }
 
-// basic handler that responds with a static string
 async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
     use std::fmt::Write;
     let mut buf = html_builder::Buffer::new();

@@ -8,7 +8,27 @@ build-target = "deploy"
 [env]
 SECRETS_DIR = "/tmp/secrets"
 DATA_DIR = "/data-volume"
+LISTEN_ADDR = "[::]:8080"
 
 [mounts]
 source = "email_weather_data"
 destination = "/data-volume"
+
+[[services]]
+internal_port = 8080
+protocol = "tcp"
+
+[[services.ports]]
+handlers = ["http"]
+port = "80"
+
+[[services.ports]]
+handlers = ["tls", "http"]
+port = "443"
+
+[[services.tcp_checks]]
+grace_period = "1s"
+interval = "15s"
+port = "8080"
+restart_limit = 0
+timeout = "2s"
