@@ -5,10 +5,11 @@ use email_weather::{
     process::process_emails,
     receive::{receive_emails, ImapSecrets},
     reply::send_replies,
-    reporting::setup_reporting,
+    reporting::{serve_logs, setup_reporting, ReportingOptions},
 };
 use eyre::Context;
 use tokio::signal::unix::SignalKind;
+use tracing_appender::rolling::Rotation;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -19,13 +20,19 @@ async fn main() -> eyre::Result<()> {
     fs::create_dir_if_not_exists(&data_dir)
         .wrap_err_with(|| format!("Unable to create data directory {:?}", data_dir))?;
 
-    let _reporting_guard = setup_reporting(&data_dir)?;
+    let reporting_options: &'static ReportingOptions = Box::leak(Box::new(ReportingOptions {
+        data_dir: data_dir.clone(),
+        log_rotation: Rotation::DAILY,
+    }));
+
+    let _reporting_guard = setup_reporting(reporting_options)?;
 
     let http_client = reqwest::Client::new();
 
     let (shutdown_tx, emails_receive_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
     let emails_process_shutdown_rx = shutdown_tx.subscribe();
     let send_replies_shutdown_rx = shutdown_tx.subscribe();
+    let serve_logs_shutdown_rx = shutdown_tx.subscribe();
 
     let ctrl_c_shutdown_tx = shutdown_tx.clone();
     tokio::spawn(async move {
@@ -89,10 +96,12 @@ async fn main() -> eyre::Result<()> {
         send_replies_shutdown_rx,
         http_client,
     ));
+    let serve_logs_join = tokio::spawn(serve_logs(serve_logs_shutdown_rx, reporting_options));
 
     receive_join.await?;
     process_join.await?;
     reply_join.await?;
+    serve_logs_join.await?;
 
     Ok(())
 }

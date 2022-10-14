@@ -8,21 +8,26 @@ edition = "2021"
 [dependencies]
 async-imap = { version = "0.6.0", default-features = false, features = ["runtime-tokio"]}
 async-native-tls = { version = "0.4", default-features = false, features = ["runtime-tokio"] }
+ansi-to-html = { version = "0.1", features = ["lazy-init"] }
+axum = "0.5"
 mail-parser = "0.6"
 color-eyre = "0.6"
 grib = { git = "https://github.com/noritada/grib-rs.git" }
 chrono = "0.4"
 chrono-tz = "0.6"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["fs"] }
 reqwest = "0.11.12"
 uuid = { version = "1.1", features = ["serde"] }
 urlencoding = "2.1"
 eyre = "0.6"
+html-builder = "0.4"
 url = { version = "2.3", features = ["serde"] }
 serde_urlencoded = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 scraper = "0.13"
+thiserror = "1.0"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

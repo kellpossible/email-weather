@@ -86,8 +86,9 @@ impl<'de> Deserialize<'de> for WeatherCode {
             }
 
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-                where
-                    E: serde::de::Error, {
+            where
+                E: serde::de::Error,
+            {
                 if v.is_negative() {
                     return Err(E::custom(format!("Cannot parse negative integer `{}`", v)));
                 }
@@ -127,7 +128,12 @@ impl<'de> Deserialize<'de> for WeatherCode {
                     95 => WeatherCode::ThunderstormSlightOrModerate,
                     96 => WeatherCode::ThunderstormHailSlight,
                     99 => WeatherCode::ThunderstormHailHeavy,
-                    _ => return Err(E::custom(format!("Unsupported/invalid weather code: `{}`", v))),
+                    _ => {
+                        return Err(E::custom(format!(
+                            "Unsupported/invalid weather code: `{}`",
+                            v
+                        )))
+                    }
                 })
             }
         }
@@ -282,13 +288,13 @@ pub struct Hourly {
     /// + Unit: `km/h (mph, m/s, knots)`
     #[serde(rename = "windspeed_10m")]
     pub wind_speed_10m: Option<Vec<f32>>,
-    /// Wind speed at 80 meters above ground. 
+    /// Wind speed at 80 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `km/h (mph, m/s, knots)`
     #[serde(rename = "windspeed_80m")]
     pub wind_speed_80m: Option<Vec<f32>>,
-    /// Wind speed at 120 meters above ground. 
+    /// Wind speed at 120 meters above ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `km/h (mph, m/s, knots)`
