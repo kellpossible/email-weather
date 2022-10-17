@@ -1,0 +1,25 @@
+# The URL the site will be built for
+base_url = "https://kellpossible.github.io/email-weather"
+
+# Whether to automatically compile all Sass files in the sass directory
+compile_sass = true
+
+# Whether to build a search index to be used later on by a JavaScript library
+build_search_index = false
+
+theme = "juice"
+
+[markdown]
+# Whether to do syntax highlighting
+# Theme can be customised by setting the `highlight_theme` variable to a theme supported by Zola
+highlight_code = false
+
+[extra]
+juice_logo_name = "Email Weather"
+juice_logo_path = "logo.png"
+juice_extra_menu = [
+    { title = "Github", link = "https://github.com/kellpossible/email-weather"}
+]
+repository_url = "https://github.com/kellpossible/email-weather"
+meta_title = "Email Weather"
+meta_description = "An email based weather forecast delivery system"

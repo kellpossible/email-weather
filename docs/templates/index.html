@@ -1,0 +1,35 @@
+{% extends "juice/templates/index.html" %}
+{% block hero %}
+<script async defer src="https://buttons.github.io/buttons.js"></script>
+<section class="text-center" style="padding:10px">
+    <h1 class="heading-text">
+        A plain-text email weather forecasting service
+    </h1>
+    <h3 class="text">
+        Send an email to <a href="mailto:email.weather.service@gmail.com">email.weather.service@gmail.com</a>, receive a concise and customisable plain-text forecast in reply! Optimised for use with satellite communication devices.
+    </h3>
+    <div style>
+        <a class="github-button" href="https://github.com/kellpossible/email-weather" data-size="large" data-show-count="true"
+            aria-label="Star kellpossible/email-weather on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/kellpossible/email-weather/fork" data-size="large"
+            data-show-count="true" aria-label="Fork kellpssible/email-weather on GitHub">Fork</a>
+    </div>
+</section>
+
+<div class="explore-more text"
+    onclick="document.getElementById('features').scrollIntoView({behavior: 'smooth'})">
+    Read On ⇩
+</div>
+{% endblock hero %}
+
+{% block favicon %}
+    <link rel="icon" type="image/png" href="/favicon.ico">
+{% endblock favicon %}
+
+{% block footer %}
+<footer>
+    <small class="subtext">
+        <a href="http://lukefrisken.com/">Luke Frisken</a> © 2022
+    </small>
+</footer>
+{% endblock footer %}
