@@ -8,6 +8,7 @@ use std::{
 };
 
 use axum::{
+    http::HeaderValue,
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -16,7 +17,13 @@ use eyre::Context;
 use futures::{Stream, TryStreamExt};
 use html_builder::Html5;
 use reqwest::StatusCode;
+use secrecy::{ExposeSecret, Secret, SecretString};
 use tokio_stream::wrappers::ReadDirStream;
+use tower::ServiceBuilder;
+use tower_http::{
+    auth::{AuthorizeRequest, RequireAuthorizationLayer},
+    trace::TraceLayer,
+};
 use tracing_appender::{
     non_blocking::{NonBlockingBuilder, WorkerGuard},
     rolling::{RollingFileAppender, Rotation},
@@ -214,6 +221,7 @@ pub fn setup(options: &Options) -> eyre::Result<Guard> {
 pub async fn serve_logs(
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     options: &'static Options,
+    admin_password: &'static SecretString,
 ) {
     tokio::select! {
         result = shutdown_rx.recv() => {
@@ -223,13 +231,78 @@ pub async fn serve_logs(
                 tracing::error!("{:?}", error);
             }
         }
-        _ = serve_logs_impl(options) => {}
+        _ = serve_logs_impl(options, &admin_password) => {}
     }
 }
 
-async fn serve_logs_impl(options: &'static Options) {
+#[derive(Clone, Copy)]
+struct MyBasicAuth {
+    admin_password: &'static SecretString,
+}
+
+impl<B> AuthorizeRequest<B> for MyBasicAuth {
+    type ResponseBody = http_body::combinators::UnsyncBoxBody<axum::body::Bytes, axum::Error>;
+
+    fn authorize(
+        &mut self,
+        request: &mut axum::http::Request<B>,
+    ) -> Result<(), axum::http::Response<Self::ResponseBody>> {
+        if check_auth(request, &self.admin_password) {
+            Ok(())
+        } else {
+            let unauthorized_response = axum::http::Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(
+                    "WWW-Authenticate",
+                    r#"Basic realm="User Visible Realm", charset="UTF-8""#,
+                )
+                .body(axum::body::Body::empty())
+                .unwrap();
+
+            Err(unauthorized_response.into_response())
+        }
+    }
+}
+
+struct BasicCredentials {
+    username: String,
+    password: SecretString,
+}
+
+fn parse_auth_header_credentials(header: &HeaderValue) -> Option<BasicCredentials> {
+    let header_str: &str = header.to_str().ok()?;
+    let credentials_base64: &str = header_str.split_once("Basic ")?.1;
+    let credentials = String::from_utf8(base64::decode(credentials_base64).ok()?).ok()?;
+    let (username, password) = credentials.split_once(':')?;
+    Some(BasicCredentials {
+        username: username.to_string(),
+        password: SecretString::new(password.to_string()),
+    })
+}
+
+/// Returns `true` if the request is authorized, returns `false` otherwise.
+fn check_auth<B>(request: &axum::http::Request<B>, admin_password: &'static SecretString) -> bool {
+    //TODO: implement bcrypt password hashing
+    tracing::debug!("check auth headers: {:?}", request.headers());
+    let credentials: BasicCredentials =
+        if let Some(auth_header) = request.headers().get("Authorization") {
+            if let Some(credentials) = parse_auth_header_credentials(auth_header) {
+                credentials
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        };
+
+    credentials.username == "admin"
+        && credentials.password.expose_secret() == admin_password.expose_secret()
+}
+
+async fn serve_logs_impl(options: &'static Options, admin_password: &'static SecretString) {
     let log_dir_1 = options.log_dir();
     let log_dir_2 = options.log_dir();
+
     // build our application with a route
     let app = Router::new()
         .route(
@@ -247,6 +320,13 @@ async fn serve_logs_impl(options: &'static Options) {
         .route(
             "/log/:filename",
             get(move |filename| async move { serve_log(filename, &log_dir_2).await }),
+        )
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(RequireAuthorizationLayer::custom(MyBasicAuth {
+                    admin_password,
+                })),
         );
 
     let addr: SocketAddr = if let Ok(var) = std::env::var("LISTEN_ADDR") {
@@ -390,4 +470,20 @@ async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
     }
 
     Ok(Html::from(buf.finish()))
+}
+
+#[cfg(test)]
+mod test {
+    use axum::http::HeaderValue;
+    use secrecy::ExposeSecret;
+
+    use super::parse_auth_header_credentials;
+
+    #[test]
+    fn test_parse_auth_header() {
+        let auth_header: HeaderValue = HeaderValue::from_str("Basic YWRtaW46dGVzdA==").unwrap();
+        let credentials = parse_auth_header_credentials(&auth_header).unwrap();
+        assert_eq!(credentials.username, "admin");
+        assert_eq!(credentials.password.expose_secret(), "test");
+    }
 }

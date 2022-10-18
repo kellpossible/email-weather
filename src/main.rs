@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use email_weather::{
     fs,
     process::process_emails,
-    receive::{receive_emails, ImapSecrets},
+    receive::receive_emails,
     reply::send_replies,
     reporting::{serve_logs, setup, Options},
+    secrets::Secrets,
 };
 use eyre::Context;
 use tokio::signal::unix::SignalKind;
@@ -74,16 +75,16 @@ async fn main() -> eyre::Result<()> {
     let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
         .wrap_err_with(|| format!("Unable to create reply queue at {:?}", reply_queue_path))?;
 
-    let imap_secrets = Box::leak(Box::new(
-        ImapSecrets::initialize(&secrets_dir)
+    let secrets = Box::leak(Box::new(
+        Secrets::initialize(&secrets_dir)
             .await
-            .wrap_err("Error while initializing imap secrets")?,
+            .wrap_err("Error while initializing secrets")?,
     ));
 
     let receive_join = tokio::spawn(receive_emails(
         process_sender,
         emails_receive_shutdown_rx,
-        imap_secrets,
+        &secrets.imap_secrets,
     ));
     let process_join = tokio::spawn(process_emails(
         process_receiver,
@@ -96,12 +97,21 @@ async fn main() -> eyre::Result<()> {
         send_replies_shutdown_rx,
         http_client,
     ));
-    let serve_logs_join = tokio::spawn(serve_logs(serve_logs_shutdown_rx, reporting_options));
+
+    if let Some(admin_password) = &secrets.admin_password {
+        let serve_logs_join = tokio::spawn(serve_logs(
+            serve_logs_shutdown_rx,
+            reporting_options,
+            admin_password,
+        ));
+        serve_logs_join.await?;
+    } else {
+        tracing::info!("No ADMIN_PASSWORD environment variable specified, logs will not be served");
+    }
 
     receive_join.await?;
     process_join.await?;
     reply_join.await?;
-    serve_logs_join.await?;
 
     Ok(())
 }
