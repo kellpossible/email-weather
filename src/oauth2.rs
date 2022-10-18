@@ -102,12 +102,20 @@ async fn refresh_token(
     refresh_token: &RefreshToken,
     scopes: Vec<Scope>,
 ) -> eyre::Result<StandardTokenResponse> {
-    Ok(client
+    let mut response = client
         .exchange_refresh_token(refresh_token)
         .add_scopes(scopes)
         .request_async(oauth2::reqwest::async_http_client)
         .await
-        .wrap_err("Error while exchanging refresh token")?)
+        .wrap_err("Error while exchanging refresh token")?;
+
+    // Re-use the refresh token if none is provided
+    if response.refresh_token().is_none() {
+        tracing::debug!("No new refresh token in the response, re-using current refresh token");
+        response.set_refresh_token(Some(refresh_token.clone()))
+    }
+
+    Ok(response)
 }
 
 async fn obtain_new_token(
