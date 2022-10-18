@@ -6,9 +6,10 @@ app = "email-weather"
 build-target = "deploy"
 
 [env]
-SECRETS_DIR = "/tmp/secrets"
+SECRETS_DIR = "/data-volume/secrets"
 DATA_DIR = "/data-volume"
 LISTEN_ADDR = "[::]:8080"
+# OVERWRITE_TOKEN_CACHE = "true"
 
 [mounts]
 source = "email_weather_data"
