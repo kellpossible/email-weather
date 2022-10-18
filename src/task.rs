@@ -20,7 +20,7 @@ pub async fn run_retry_log_errors<F, FUT>(
             if let Err(error) = run().await {
                 tracing::error!("{:?}", error);
                 tokio::time::sleep(Duration::from_secs(10)).await;
-                tracing::warn!("Retrying...")
+                tracing::warn!("Retrying...");
             };
         }
     };

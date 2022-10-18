@@ -1,6 +1,7 @@
 //! Utilities for logging and automated bug reporting.
 
 use std::{
+    ffi::OsStr,
     net::SocketAddr,
     path::{Path, PathBuf},
     str::FromStr,
@@ -125,26 +126,30 @@ impl Drop for ReportWriter {
     }
 }
 
-pub struct ReportingGuard {
+pub struct Guard {
     _sentry: Option<sentry::ClientInitGuard>,
     _writer: WorkerGuard,
 }
 
-pub struct ReportingOptions {
+pub struct Options {
     pub data_dir: PathBuf,
     pub log_rotation: Rotation,
 }
 
-impl ReportingOptions {
+impl Options {
     fn log_dir(&self) -> PathBuf {
         self.data_dir.join("log")
     }
 }
 
-pub fn setup_reporting(options: &ReportingOptions) -> eyre::Result<ReportingGuard> {
+pub fn setup(options: &Options) -> eyre::Result<Guard> {
     let sentry = if let Ok(sentry_dsn) = std::env::var("SENTRY_DSN") {
         Some(sentry::init(sentry::ClientOptions {
-            dsn: Some(sentry_dsn.parse().unwrap()),
+            dsn: Some(
+                sentry_dsn
+                    .parse()
+                    .wrap_err("Unable to parse SENTRY_DSN environment variable")?,
+            ),
             release: sentry::release_name!(),
             // TODO: set this lower for production
             traces_sample_rate: 1.0,
@@ -198,7 +203,7 @@ pub fn setup_reporting(options: &ReportingOptions) -> eyre::Result<ReportingGuar
         tracing::info!("sentry.io reporting is enabled");
     }
 
-    Ok(ReportingGuard {
+    Ok(Guard {
         _sentry: sentry,
         _writer: report_writer_guard,
     })
@@ -208,7 +213,7 @@ pub fn setup_reporting(options: &ReportingOptions) -> eyre::Result<ReportingGuar
 #[tracing::instrument(skip(shutdown_rx, options))]
 pub async fn serve_logs(
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
-    options: &'static ReportingOptions,
+    options: &'static Options,
 ) {
     tokio::select! {
         result = shutdown_rx.recv() => {
@@ -222,7 +227,7 @@ pub async fn serve_logs(
     }
 }
 
-async fn serve_logs_impl(options: &'static ReportingOptions) {
+async fn serve_logs_impl(options: &'static Options) {
     let log_dir_1 = options.log_dir();
     let log_dir_2 = options.log_dir();
     // build our application with a route
@@ -255,7 +260,7 @@ async fn serve_logs_impl(options: &'static ReportingOptions) {
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
-        .unwrap()
+        .unwrap();
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -289,7 +294,7 @@ async fn serve_log(
         .wrap_err("Error creating files stream in log directory")?
         .try_filter(|path| {
             futures::future::ready(
-                if let Some(path_str) = path.file_name().and_then(|path| path.to_str()) {
+                if let Some(path_str) = path.file_name().and_then(OsStr::to_str) {
                     path_str == &*filename
                 } else {
                     false

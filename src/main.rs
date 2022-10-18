@@ -5,7 +5,7 @@ use email_weather::{
     process::process_emails,
     receive::{receive_emails, ImapSecrets},
     reply::send_replies,
-    reporting::{serve_logs, setup_reporting, ReportingOptions},
+    reporting::{serve_logs, setup, Options},
 };
 use eyre::Context;
 use tokio::signal::unix::SignalKind;
@@ -20,12 +20,12 @@ async fn main() -> eyre::Result<()> {
     fs::create_dir_if_not_exists(&data_dir)
         .wrap_err_with(|| format!("Unable to create data directory {:?}", data_dir))?;
 
-    let reporting_options: &'static ReportingOptions = Box::leak(Box::new(ReportingOptions {
+    let reporting_options: &'static Options = Box::leak(Box::new(Options {
         data_dir: data_dir.clone(),
         log_rotation: Rotation::DAILY,
     }));
 
-    let _reporting_guard = setup_reporting(reporting_options)?;
+    let _reporting_guard = setup(reporting_options)?;
 
     let http_client = reqwest::Client::new();
 
