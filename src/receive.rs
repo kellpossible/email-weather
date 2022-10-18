@@ -287,7 +287,7 @@ async fn receive_emails_impl(
         .map_err(|e| e.0)
         .wrap_err("Error authenticating with XOAUTH2")?;
     // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
-    tracing::info!("Successful imap session login");
+    tracing::info!("Successful IMAP session login");
 
     receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await?;
 

@@ -5,7 +5,7 @@ use reqwest::{Method, StatusCode};
 use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
 
 /// WMO Weather interpretation code (WW)
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum WeatherCode {
     /// Code: 0
     ClearSky = 0,
@@ -141,7 +141,7 @@ impl<'de> Deserialize<'de> for WeatherCode {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HourlyVariable {
     /// This isn't a selectable value, but it can be returned in [Forecast::hourly_units].
