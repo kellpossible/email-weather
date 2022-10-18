@@ -1,3 +1,5 @@
+//! Utilities for logging and automated bug reporting.
+
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},

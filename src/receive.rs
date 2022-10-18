@@ -8,15 +8,15 @@ use std::{
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
+use oauth2::AccessToken;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::Mutex,
 };
 use tracing::Instrument;
-use yup_oauth2::{ApplicationSecret, InstalledFlowAuthenticator};
 
-use crate::{inreach, task::run_retry_log_errors};
+use crate::{inreach, oauth2::ClientSecretDefinition, task::run_retry_log_errors};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Email {
@@ -25,7 +25,7 @@ pub enum Email {
 
 struct GmailOAuth2 {
     user: String,
-    access_token: String,
+    access_token: AccessToken,
 }
 
 impl async_imap::Authenticator for &GmailOAuth2 {
@@ -34,7 +34,8 @@ impl async_imap::Authenticator for &GmailOAuth2 {
     fn process(&mut self, _data: &[u8]) -> Self::Response {
         format!(
             "user={}\x01auth=Bearer {}\x01\x01",
-            self.user, self.access_token
+            self.user,
+            self.access_token.secret()
         )
     }
 }
@@ -157,7 +158,7 @@ where
 
 pub struct ImapSecrets {
     pub token_cache_path: PathBuf,
-    pub client_secret: ApplicationSecret,
+    pub client_secret: ClientSecretDefinition,
 }
 
 impl ImapSecrets {
@@ -167,26 +168,31 @@ impl ImapSecrets {
     ///   will be read from `clientsecret.json` in the specified `secrets_dir` directory.
     /// + If `TOKEN_CACHE` environment variable is set, the contents will be written to
     ///   `tokencache.json` inside the specified `secrets_dir` directory. If the file already
-    ///   exists then a warning will be logged. If the environment variable is not set, then the
-    ///   [`yup_oauth2`] library will initialize the cache automatically using the interactive
-    ///   Installed flow.
+    ///   exists then the existing file will be used instead. If the environment variable is not
+    ///   set, then the cache will be initialized automatically using the interactive Installed
+    ///   OAUTH2 flow.
+    /// + If `OVERWRITE_TOKEN_CACHE` environment variable is set, and `TOKEN_CACHE` is also set,
+    ///   then the
     /// + `secrets_dir` needs to exist and have read/write permissions for this application.
     pub async fn initialize(secrets_dir: &Path) -> eyre::Result<Self> {
         let client_secret = match std::env::var("CLIENT_SECRET") {
             Ok(client_secret) => {
                 tracing::debug!("Reading client secret from CLIENT_SECRET environment variable.");
-                yup_oauth2::parse_application_secret(client_secret).wrap_err(
+                serde_json::from_str(&client_secret).wrap_err(
                     "Unable to parse client secret from CLIENT_SECRET environment variable",
                 )
             }
             Err(std::env::VarError::NotPresent) => {
                 let secret_path = secrets_dir.join("clientsecret.json");
                 tracing::debug!("Reading client secret from file {:?}", &secret_path);
-                yup_oauth2::read_application_secret(&secret_path)
-                    .await
-                    .wrap_err_with(|| {
-                        format!("Error reading oauth2 secret from file {:?}", secret_path)
-                    })
+
+                {
+                    let client_secret = tokio::fs::read_to_string(&secret_path).await?;
+                    serde_json::from_str(&client_secret).wrap_err("Unable to parse client secret")
+                }
+                .wrap_err_with(|| {
+                    format!("Error reading oauth2 secret from file {:?}", secret_path)
+                })
             }
             Err(unexpected) => Err(eyre::Error::from(unexpected))
                 .wrap_err("Error attempting to read CLIENT_SECRET environment variable"),
@@ -197,12 +203,26 @@ impl ImapSecrets {
         match std::env::var("TOKEN_CACHE") {
             Ok(secret) => {
                 tracing::debug!("Reading token cache from TOKEN_CACHE environment variable.");
-                if token_cache_path.exists() {
-                    tracing::warn!(
-                        "Secret file {:?} already exists, will not overwrite",
-                        token_cache_path
-                    );
+                let write: bool = if token_cache_path.exists() {
+                    if let Ok(var) = std::env::var("OVERWRITE_TOKEN_CACHE") {
+                        var == "true"
+                    } else {
+                        tracing::debug!(
+                            "Token cache file {:?} already exists, will not overwrite",
+                            token_cache_path
+                        );
+                        false
+                    }
                 } else {
+                    true
+                };
+
+                if write {
+                    if token_cache_path.exists() {
+                        tracing::warn!("Overwriting token cache file {:?}", token_cache_path);
+                    } else {
+                        tracing::info!("Writing to new token cache file {:?}", token_cache_path);
+                    }
                     std::fs::write(&token_cache_path, &secret).wrap_err_with(|| {
                         format!("Error writing token cache file: {:?}", token_cache_path)
                     })?;
@@ -241,28 +261,22 @@ async fn receive_emails_impl(
     let imap_domain = "imap.gmail.com";
     let imap_username = "email.weather.service@gmail.com";
 
-    let auth = InstalledFlowAuthenticator::builder(
-        imap_secrets.client_secret.clone(),
-        yup_oauth2::InstalledFlowReturnMethod::Interactive,
-    )
-    .persist_tokens_to_disk(imap_secrets.token_cache_path.clone())
-    .build()
-    .await
-    .wrap_err("Error running OAUTH2 installed flow")?;
-
-    let scopes = &[
+    let scopes = vec![
         // https://developers.google.com/gmail/imap/xoauth2-protocol
-        "https://mail.google.com/",
+        oauth2::Scope::new("https://mail.google.com/".to_string()),
     ];
 
-    let access_token: yup_oauth2::AccessToken = auth
-        .token(scopes)
-        .await
-        .wrap_err("Error obtaining OAUTH2 access token")?;
+    let access_token = crate::oauth2::authenticate(
+        imap_secrets.client_secret.clone(),
+        scopes,
+        &imap_secrets.token_cache_path,
+    )
+    .await
+    .wrap_err("Error obtaining OAUTH2 access token")?;
 
     let gmail_auth = GmailOAuth2 {
         user: String::from(imap_username),
-        access_token: access_token.as_str().to_string(),
+        access_token,
     };
 
     tracing::info!("Logging in to {} email via IMAP", imap_username);
