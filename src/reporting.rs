@@ -289,8 +289,6 @@ fn check_auth<B>(
     request: &axum::http::Request<B>,
     admin_password_hash: &'static SecretString,
 ) -> bool {
-    //TODO: implement bcrypt password hashing
-    tracing::debug!("check auth headers: {:?}", request.headers());
     let credentials: BasicCredentials =
         if let Some(auth_header) = request.headers().get("Authorization") {
             if let Some(credentials) = parse_auth_header_credentials(auth_header) {
