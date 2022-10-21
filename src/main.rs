@@ -98,11 +98,11 @@ async fn main() -> eyre::Result<()> {
         http_client,
     ));
 
-    if let Some(admin_password) = &secrets.admin_password {
+    if let Some(admin_password_hash) = &secrets.admin_password_hash {
         let serve_logs_join = tokio::spawn(serve_logs(
             serve_logs_shutdown_rx,
             reporting_options,
-            admin_password,
+            admin_password_hash,
         ));
         serve_logs_join.await?;
     } else {

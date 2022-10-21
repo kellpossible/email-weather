@@ -55,4 +55,4 @@ native-tls = { version = "0.2", features = ["vendored"] } # use vendored for MUS
 wiremock = "0.5"
 
 [workspace]
-members = ["open-meteo", "open-topo-data"]
+members = ["open-meteo", "open-topo-data", "admin-password-hash"]

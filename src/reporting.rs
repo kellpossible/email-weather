@@ -217,11 +217,13 @@ pub fn setup(options: &Options) -> eyre::Result<Guard> {
 }
 
 /// Serve the application logs.
-#[tracing::instrument(skip(shutdown_rx, options))]
+///
+/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
+#[tracing::instrument(skip(shutdown_rx, options, admin_password_hash))]
 pub async fn serve_logs(
     mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     options: &'static Options,
-    admin_password: &'static SecretString,
+    admin_password_hash: &'static SecretString,
 ) {
     tokio::select! {
         result = shutdown_rx.recv() => {
@@ -231,13 +233,15 @@ pub async fn serve_logs(
                 tracing::error!("{:?}", error);
             }
         }
-        _ = serve_logs_impl(options, &admin_password) => {}
+        _ = serve_logs_impl(options, &admin_password_hash) => {}
     }
 }
 
+/// Basic authentication for accessing logs.
 #[derive(Clone, Copy)]
 struct MyBasicAuth {
-    admin_password: &'static SecretString,
+    /// `admin` user password hash, hashed using bcrypt.
+    admin_password_hash: &'static SecretString,
 }
 
 impl<B> AuthorizeRequest<B> for MyBasicAuth {
@@ -247,7 +251,7 @@ impl<B> AuthorizeRequest<B> for MyBasicAuth {
         &mut self,
         request: &mut axum::http::Request<B>,
     ) -> Result<(), axum::http::Response<Self::ResponseBody>> {
-        if check_auth(request, &self.admin_password) {
+        if check_auth(request, &self.admin_password_hash) {
             Ok(())
         } else {
             let unauthorized_response = axum::http::Response::builder()
@@ -280,8 +284,11 @@ fn parse_auth_header_credentials(header: &HeaderValue) -> Option<BasicCredential
     })
 }
 
-/// Returns `true` if the request is authorized, returns `false` otherwise.
-fn check_auth<B>(request: &axum::http::Request<B>, admin_password: &'static SecretString) -> bool {
+/// Check authorization for a request. Returns `true` if the request is authorized, returns `false` otherwise. Uses Basic http authentication and bcrypt for password hashing.
+fn check_auth<B>(
+    request: &axum::http::Request<B>,
+    admin_password_hash: &'static SecretString,
+) -> bool {
     //TODO: implement bcrypt password hashing
     tracing::debug!("check auth headers: {:?}", request.headers());
     let credentials: BasicCredentials =
@@ -295,11 +302,18 @@ fn check_auth<B>(request: &axum::http::Request<B>, admin_password: &'static Secr
             return false;
         };
 
-    credentials.username == "admin"
-        && credentials.password.expose_secret() == admin_password.expose_secret()
+    let password_match = bcrypt::verify(
+        credentials.password.expose_secret(),
+        admin_password_hash.expose_secret(),
+    )
+    .unwrap_or(false);
+    credentials.username == "admin" && password_match
 }
 
-async fn serve_logs_impl(options: &'static Options, admin_password: &'static SecretString) {
+/// Implementation for serving logs.
+///
+/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
+async fn serve_logs_impl(options: &'static Options, admin_password_hash: &'static SecretString) {
     let log_dir_1 = options.log_dir();
     let log_dir_2 = options.log_dir();
 
@@ -325,7 +339,7 @@ async fn serve_logs_impl(options: &'static Options, admin_password: &'static Sec
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
                 .layer(RequireAuthorizationLayer::custom(MyBasicAuth {
-                    admin_password,
+                    admin_password_hash,
                 })),
         );
 

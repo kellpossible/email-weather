@@ -1,7 +1,11 @@
-# 
++++
+title = "Deployment"
+description = "Deployment instructions (for those who want to run their own instance of the service)"
+weight = 2
++++
 
 ```bash
-$ mkpasswd -m bcrypt
-Password: 
-$ $2b$05$lMRd9fjBLUSd1AvIpJDQt.PTJP8Z6YQB7g9z9hsKU/pT3ihH0eKLO
+$ cargo run -p admin-password-hash
+Enter password to be hashed:🔒
+$ $2b$10$sl6AVe96a.smPQW1EHlEtuEyD4rxWvjLIIvDmKgghteQXqjaGDdka
 ```
