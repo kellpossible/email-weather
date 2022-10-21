@@ -468,10 +468,10 @@ async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
     let mut body = html.body();
     let mut ul = body.ul();
 
-    let files_stream = files_stream(log_dir).await?;
-    futures::pin_mut!(files_stream);
+    let mut file_paths: Vec<PathBuf> = files_stream(log_dir).await?.try_collect().await?;
+    file_paths.sort();
 
-    while let Some(path) = files_stream.try_next().await? {
+    for path in file_paths {
         let mut li = ul.li();
         let filename = path
             .file_name()
