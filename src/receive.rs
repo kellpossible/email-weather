@@ -37,30 +37,48 @@ impl async_imap::Authenticator for &GmailOAuth2 {
     }
 }
 
-// TODO: handle expected IMAP errors more gracefully
+#[derive(Debug, thiserror::Error)]
+enum PollEmailsError {
+    #[error("An anticipated connection error occurred that requires an IMAP session restart")]
+    Connection(async_imap::error::Error),
+    #[error(transparent)]
+    Unexpected(#[from] eyre::Error),
+}
+
 async fn receive_emails_poll_inbox<T>(
     emails_sender: Arc<Mutex<yaque::Sender>>,
     imap_session: &mut async_imap::Session<T>,
-) -> eyre::Result<()>
+) -> Result<(), PollEmailsError>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + std::fmt::Debug,
 {
     tracing::trace!("Polling IMAP INBOX");
-    imap_session.select("INBOX").await?;
+    imap_session
+        .select("INBOX")
+        .await
+        .wrap_err("Unexpected error while selecting INBOX")?;
 
-    let sequence_set: Vec<String> = imap_session
+    let unseen_messages = imap_session
         .search("UNSEEN")
         .await
-        .wrap_err("Error while searching for UNSEEN messages")?
-        .iter()
-        .map(ToString::to_string)
-        .collect();
+        .map_err(|error| match error {
+            async_imap::error::Error::Io(_) | async_imap::error::Error::ConnectionLost => {
+                PollEmailsError::Connection(error)
+            }
+            _ => PollEmailsError::Unexpected(eyre::Error::from(error).wrap_err(
+                "Unexpected error occurred while searching for UNSEEN messages with IMAP",
+            )),
+        })?;
+    let sequence_set: Vec<String> = unseen_messages.iter().map(ToString::to_string).collect();
 
     if !sequence_set.is_empty() {
         tracing::debug!("Obtained UNSEEN messages: {:?}", sequence_set);
         let fetch_sequences: String = sequence_set.join(",");
         {
-            let fetch_stream = imap_session.fetch(fetch_sequences, "RFC822").await?;
+            let fetch_stream = imap_session
+                .fetch(fetch_sequences, "RFC822")
+                .await
+                .wrap_err("Unexpected error while fetching RFC822 from message")?;
             fetch_stream
                 .zip(futures::stream::iter(sequence_set.iter()))
                 .map(|(result, sequence)| result.map(|ok| (sequence, ok)))
@@ -143,7 +161,7 @@ where
 async fn receive_emails_poll_inbox_loop<T>(
     process_sender: Arc<Mutex<yaque::Sender>>,
     imap_session: &mut async_imap::Session<T>,
-) -> eyre::Result<()>
+) -> Result<(), PollEmailsError>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + std::fmt::Debug,
 {
@@ -157,45 +175,62 @@ async fn receive_emails_impl(
     process_sender: Arc<Mutex<yaque::Sender>>,
     imap_secrets: &ImapSecrets,
 ) -> eyre::Result<()> {
-    tracing::debug!("Starting receiving emails job");
-    let tls = async_native_tls::TlsConnector::new();
+    loop {
+        tracing::debug!("Starting receiving emails job");
+        let tls = async_native_tls::TlsConnector::new();
 
-    let imap_domain = "imap.gmail.com";
-    let imap_username = "email.weather.service@gmail.com";
+        let imap_domain = "imap.gmail.com";
+        let imap_username = "email.weather.service@gmail.com";
 
-    let scopes = vec![
-        // https://developers.google.com/gmail/imap/xoauth2-protocol
-        oauth2::Scope::new("https://mail.google.com/".to_string()),
-    ];
+        let scopes = vec![
+            // https://developers.google.com/gmail/imap/xoauth2-protocol
+            oauth2::Scope::new("https://mail.google.com/".to_string()),
+        ];
 
-    let access_token = crate::oauth2::authenticate(
-        imap_secrets.client_secret.clone(),
-        scopes,
-        &imap_secrets.token_cache_path,
-    )
-    .await
-    .wrap_err("Error obtaining OAUTH2 access token")?;
-
-    let gmail_auth = GmailOAuth2 {
-        user: String::from(imap_username),
-        access_token,
-    };
-
-    tracing::info!("Logging in to {} email via IMAP", imap_username);
-    let imap_client = async_imap::connect((imap_domain, 993), imap_domain, tls).await?;
-    let mut imap_session: async_imap::Session<_> = imap_client
-        .authenticate("XOAUTH2", &gmail_auth)
+        let access_token = crate::oauth2::authenticate(
+            imap_secrets.client_secret.clone(),
+            scopes,
+            &imap_secrets.token_cache_path,
+        )
         .await
-        .map_err(|e| e.0)
-        .wrap_err("Error authenticating with XOAUTH2")?;
-    // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
-    tracing::info!("Successful IMAP session login");
+        .wrap_err("Error obtaining OAUTH2 access token")?;
 
-    receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await?;
+        let gmail_auth = GmailOAuth2 {
+            user: String::from(imap_username),
+            access_token,
+        };
 
-    tracing::info!("Logging out of IMAP session");
+        tracing::info!("Logging in to {} email via IMAP", imap_username);
+        let imap_client = async_imap::connect((imap_domain, 993), imap_domain, tls).await?;
+        let mut imap_session: async_imap::Session<_> = imap_client
+            .authenticate("XOAUTH2", &gmail_auth)
+            .await
+            .map_err(|e| e.0)
+            .wrap_err("Error authenticating with XOAUTH2")?;
+        // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
+        tracing::info!("Successful IMAP session login");
 
-    imap_session.logout().await?;
+        match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await {
+            Ok(_) => {}
+            Err(error) => match error {
+                PollEmailsError::Connection(_) => {
+                    tracing::debug!(
+                        "Restarting IMAP session after anticipated connection error: {:?}",
+                        error
+                    );
+                    continue;
+                }
+                _ => {
+                    return Err(eyre::Error::from(error)
+                        .wrap_err("Unexpected error while polling email inbox"))
+                }
+            },
+        };
+
+        tracing::info!("Logging out of IMAP session");
+        imap_session.logout().await?;
+        break;
+    }
 
     Ok(())
 }
