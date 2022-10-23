@@ -131,7 +131,7 @@ impl Secrets {
                     "Admin password hash was read from ADMIN_PASSWORD_HASH environment variable"
                 );
                 Some(SecretString::new(admin_password))
-            },
+            }
             Err(VarError::NotPresent) => {
                 let admin_password_path = secrets_dir.join("admin_password_hash");
                 if admin_password_path.is_file() {
@@ -148,13 +148,14 @@ impl Secrets {
                             )
                         })?;
 
-                    let stripped_password = password.strip_suffix('\n').unwrap_or(&password).to_string();
+                    let stripped_password =
+                        password.strip_suffix('\n').unwrap_or(&password).to_string();
                     Some(SecretString::new(stripped_password))
                 } else {
                     tracing::warn!("Admin debug/log interface disabled (because ADMIN_PASSWORD_HASH secret is unavailable)");
                     None
                 }
-            },
+            }
             Err(unexpected) => {
                 return Err(unexpected)
                     .wrap_err("Error while reading ADMIN_PASSWORD_HASH environment variable")
