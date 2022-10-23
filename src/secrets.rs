@@ -4,12 +4,16 @@ use std::{
 };
 
 use eyre::Context;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 
 use crate::oauth2::ClientSecretDefinition;
 
+/// Secrets used to access email account via IMAP.
 pub struct ImapSecrets {
+    /// The path to the json file used for the OAUTH2 token cache. This file will be updated by
+    /// this application when tokens expire and are refreshed.
     pub token_cache_path: PathBuf,
+    /// OAUTH2 Installed client secret.
     pub client_secret: ClientSecretDefinition,
 }
 
@@ -114,7 +118,8 @@ pub struct Secrets {
 impl Secrets {
     /// In addition to the secrets loaded by [ImapSecrets], there are the following:
     ///
-    /// `ADMIN`
+    /// + `ADMIN_PASSWORD_HASH`: A `bcrypt` hash of the administrator password used to access the
+    ///   application logs.
     pub async fn initialize(secrets_dir: &Path) -> eyre::Result<Self> {
         let imap_secrets = ImapSecrets::initialize(secrets_dir)
             .await
