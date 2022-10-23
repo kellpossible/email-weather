@@ -125,40 +125,45 @@ impl Secrets {
             .await
             .wrap_err("Error initializing secrets for IMAP client")?;
 
-        let admin_password_path = secrets_dir.join("admin_password_hash");
-        let admin_password = if admin_password_path.is_file() {
-            tracing::info!(
-                "Reading admin password hash from secret file: {:?}",
-                admin_password_path
-            );
-            let password = tokio::fs::read_to_string(&admin_password_path)
-                .await
-                .wrap_err_with(|| {
-                    format!(
-                        "Error while reading admin password secret hash file {:?}",
+        let admin_password_hash = match std::env::var("ADMIN_PASSWORD_HASH") {
+            Ok(admin_password) => {
+                tracing::info!(
+                    "Admin password hash was read from ADMIN_PASSWORD_HASH environment variable"
+                );
+                Some(SecretString::new(admin_password))
+            },
+            Err(VarError::NotPresent) => {
+                let admin_password_path = secrets_dir.join("admin_password_hash");
+                if admin_password_path.is_file() {
+                    tracing::info!(
+                        "Reading admin password hash from secret file: {:?}",
                         admin_password_path
-                    )
-                })?;
+                    );
+                    let password = tokio::fs::read_to_string(&admin_password_path)
+                        .await
+                        .wrap_err_with(|| {
+                            format!(
+                                "Error while reading admin password secret hash file {:?}",
+                                admin_password_path
+                            )
+                        })?;
 
-            let stripped_password = password.strip_suffix('\n').unwrap_or(&password).to_string();
-            Some(SecretString::new(stripped_password))
-        } else {
-            tracing::info!(
-                "Reading admin password hash from ADMIN_PASSWORD_HASH environment variable"
-            );
-            match std::env::var("ADMIN_PASSWORD_HASH") {
-                Ok(admin_password) => Some(SecretString::new(admin_password)),
-                Err(VarError::NotPresent) => None,
-                Err(unexpected) => {
-                    return Err(unexpected)
-                        .wrap_err("Error while reading ADMIN_PASSWORD_HASH environment variable")
+                    let stripped_password = password.strip_suffix('\n').unwrap_or(&password).to_string();
+                    Some(SecretString::new(stripped_password))
+                } else {
+                    tracing::warn!("Admin debug/log interface disabled (because ADMIN_PASSWORD_HASH secret is unavailable)");
+                    None
                 }
+            },
+            Err(unexpected) => {
+                return Err(unexpected)
+                    .wrap_err("Error while reading ADMIN_PASSWORD_HASH environment variable")
             }
         };
 
         Ok(Self {
             imap_secrets,
-            admin_password_hash: admin_password,
+            admin_password_hash,
         })
     }
 }

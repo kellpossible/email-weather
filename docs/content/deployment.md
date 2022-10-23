@@ -22,6 +22,8 @@ Enter password to be hashed:🔒
 $ $2b$10$sl6AVe96a.smPQW1EHlEtuEyD4rxWvjLIIvDmKgghteQXqjaGDdka
 ```
 
+Beware, the `$` signs may mess with your shell, and require escaping, or the use of single quote, for example: `ADMIN_PASSWORD_HASH='$2b$10$sl6AVe96a.smPQW1EHlEtuEyD4rxWvjLIIvDmKgghteQXqjaGDdka'`.
+
 ## Environment Variables
 
 ### `OVERWRITE_TOKEN_CACHE`
