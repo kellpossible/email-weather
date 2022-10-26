@@ -107,6 +107,19 @@ async fn refresh_token(
         .add_scopes(scopes)
         .request_async(oauth2::reqwest::async_http_client)
         .await
+        .map_err(|error| match error {
+            oauth2::RequestTokenError::ServerResponse(response) => {
+                let response_json = match serde_json::to_string_pretty(&response) {
+                    Ok(response_json) => response_json,
+                    Err(error) => format!(
+                        "Unable to display response, error while serializing response to json ({})",
+                        error
+                    ),
+                };
+                eyre::eyre!("Server returned error response:\n{}", response_json)
+            }
+            _ => eyre::Error::from(error),
+        })
         .wrap_err("Error while exchanging refresh token")?;
 
     // Re-use the refresh token if none is provided
@@ -193,10 +206,14 @@ pub async fn authenticate(
             tracing::debug!("Token in cache has expired.");
             let token_response = if let Some(token) = token_cache.response.refresh_token() {
                 tracing::debug!("Using refresh token to automatically obtain a new token");
-                refresh_token(&client, token, scopes).await?
+                refresh_token(&client, token, scopes)
+                    .await
+                    .wrap_err("Error while refreshing token")?
             } else {
                 tracing::debug!("No refresh token available, manually obtaining a new token");
-                obtain_new_token(&client, scopes).await?
+                obtain_new_token(&client, scopes)
+                    .await
+                    .wrap_err("Error while obtaining new token")?
             };
             let token_cache = TokenCache::try_new(token_response)?;
             token_cache.write(token_cache_path).await?;

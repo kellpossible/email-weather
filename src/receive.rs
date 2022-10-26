@@ -1,6 +1,6 @@
 //! See [`receive_emails()`].
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use async_imap::types::Fetch;
 use eyre::Context;
@@ -37,12 +37,65 @@ impl async_imap::Authenticator for &GmailOAuth2 {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 enum PollEmailsError {
-    #[error("An anticipated connection error occurred that requires an IMAP session restart")]
-    Connection(async_imap::error::Error),
-    #[error(transparent)]
-    Unexpected(#[from] eyre::Error),
+    Connection {
+        error: async_imap::error::Error,
+        message: Cow<'static, str>,
+    },
+    Unexpected(eyre::Error),
+}
+
+impl PollEmailsError {
+    /// Convert this error into an [`eyre::Error`].
+    fn into_eyre(self) -> eyre::Error {
+        match self {
+            PollEmailsError::Connection { .. } => self.into(),
+            PollEmailsError::Unexpected(error) => error,
+        }
+    }
+}
+
+impl std::error::Error for PollEmailsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PollEmailsError::Connection { error, .. } => Some(error),
+            PollEmailsError::Unexpected(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for PollEmailsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PollEmailsError::Connection { message, .. } => {
+                write!(f, "An IMAP connection error occurred: {}", message)
+            }
+            PollEmailsError::Unexpected(error) => error.fmt(f),
+        }
+    }
+}
+
+impl From<eyre::Error> for PollEmailsError {
+    fn from(error: eyre::Error) -> Self {
+        Self::Unexpected(error)
+    }
+}
+
+fn map_imap_connection_error(
+    error: async_imap::error::Error,
+    message: impl Into<Cow<'static, str>>,
+) -> PollEmailsError {
+    let message = message.into();
+    match error {
+        async_imap::error::Error::Io(_) | async_imap::error::Error::ConnectionLost => {
+            PollEmailsError::Connection { error, message }
+        }
+        _ => PollEmailsError::Unexpected(
+            eyre::Error::from(error)
+                .wrap_err(format!("Unexpected IMAP error occurred: {}", message)),
+        ),
+    }
 }
 
 async fn receive_emails_poll_inbox<T>(
@@ -56,19 +109,15 @@ where
     imap_session
         .select("INBOX")
         .await
-        .wrap_err("Unexpected error while selecting INBOX")?;
+        .map_err(|error| map_imap_connection_error(error, "Error while selecting INBOX"))?;
 
-    let unseen_messages = imap_session
-        .search("UNSEEN")
-        .await
-        .map_err(|error| match error {
-            async_imap::error::Error::Io(_) | async_imap::error::Error::ConnectionLost => {
-                PollEmailsError::Connection(error)
-            }
-            _ => PollEmailsError::Unexpected(eyre::Error::from(error).wrap_err(
-                "Unexpected error occurred while searching for UNSEEN messages with IMAP",
-            )),
-        })?;
+    let unseen_messages =
+        imap_session
+            .search("UNSEEN")
+            .await
+            .map_err(|error: async_imap::error::Error| {
+                map_imap_connection_error(error, "Error while searching for UNSEEN messages")
+            })?;
     let sequence_set: Vec<String> = unseen_messages.iter().map(ToString::to_string).collect();
 
     if !sequence_set.is_empty() {
@@ -78,11 +127,22 @@ where
             let fetch_stream = imap_session
                 .fetch(fetch_sequences, "RFC822")
                 .await
-                .wrap_err("Unexpected error while fetching RFC822 from message")?;
+                .map_err(|error: async_imap::error::Error| {
+                    map_imap_connection_error(
+                        error,
+                        "Error while constructing stream to fetch RFC822 from messages",
+                    )
+                })?;
             fetch_stream
                 .zip(futures::stream::iter(sequence_set.iter()))
-                .map(|(result, sequence)| result.map(|ok| (sequence, ok)))
-                .map_err(eyre::Error::from)
+                .map(|(result, sequence)| {
+                    match result {
+                        Ok(ok) => Ok((sequence, ok)),
+                        Err(error) => {
+                            Err(map_imap_connection_error(error, format!("Error while fetching RFC822 from message with sequence ID {}", sequence)))
+                        },
+                    }
+                })
                 .and_then(|(sequence, fetch): (&String, Fetch)| {
                     let emails_sender = emails_sender.clone();
                     async move {
@@ -132,10 +192,10 @@ where
                         tracing::debug!("text_body: {}", text_body);
 
                         let email: Email = Email::Inreach(text_body.parse().wrap_err("Unable to parse text body as a valid inreach email")?);
-                        let email_data = serde_json::to_vec(&email)?;
+                        let email_data = serde_json::to_vec(&email).wrap_err("Error serializing email data to json bytes")?;
 
                         let mut sender = emails_sender.lock().await;
-                        sender.send(email_data).await?;
+                        sender.send(email_data).await.wrap_err("Error submitting email data to send queue")?;
 
                         tracing::debug!("email added to queue: {:?}", email);
 
@@ -213,7 +273,7 @@ async fn receive_emails_impl(
         match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await {
             Ok(_) => {}
             Err(error) => match error {
-                PollEmailsError::Connection(_) => {
+                PollEmailsError::Connection { .. } => {
                     tracing::debug!(
                         "Restarting IMAP session after anticipated connection error: {:?}",
                         error
@@ -221,7 +281,8 @@ async fn receive_emails_impl(
                     continue;
                 }
                 _ => {
-                    return Err(eyre::Error::from(error)
+                    return Err(error
+                        .into_eyre()
                         .wrap_err("Unexpected error while polling email inbox"))
                 }
             },
