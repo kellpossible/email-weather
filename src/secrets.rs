@@ -21,9 +21,9 @@ impl ImapSecrets {
     /// Initializes secrets required for accessing IMAP.
     ///
     /// + If `CLIENT_SECRET` environment variable is set, the contents will be parsed, otherwise it
-    ///   will be read from `clientsecret.json` in the specified `secrets_dir` directory.
+    ///   will be read from `client_secret.json` in the specified `secrets_dir` directory.
     /// + If `TOKEN_CACHE` environment variable is set, the contents will be written to
-    ///   `tokencache.json` inside the specified `secrets_dir` directory. If the file already
+    ///   `token_cache.json` inside the specified `secrets_dir` directory. If the file already
     ///   exists then the existing file will be used instead. If the environment variable is not
     ///   set, then the cache will be initialized automatically using the interactive Installed
     ///   OAUTH2 flow.
@@ -39,7 +39,7 @@ impl ImapSecrets {
                 )
             }
             Err(std::env::VarError::NotPresent) => {
-                let secret_path = secrets_dir.join("clientsecret.json");
+                let secret_path = secrets_dir.join("client_secret.json");
                 tracing::debug!("Reading client secret from file {:?}", &secret_path);
 
                 {
@@ -55,7 +55,7 @@ impl ImapSecrets {
         }
         .wrap_err("Error reading oauth2 client secret")?;
 
-        let token_cache_path = secrets_dir.join("tokencache.json");
+        let token_cache_path = secrets_dir.join("token_cache.json");
         match std::env::var("TOKEN_CACHE") {
             Ok(secret) => {
                 tracing::debug!("Reading token cache from TOKEN_CACHE environment variable.");

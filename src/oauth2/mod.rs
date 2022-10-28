@@ -11,6 +11,7 @@ use std::future::Future;
 
 mod device;
 mod installed;
+mod service_account;
 
 pub use device::DeviceFlow;
 pub use installed::InstalledFlow;

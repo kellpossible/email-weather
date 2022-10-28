@@ -32,9 +32,9 @@ Further Reading:
 
 ## Secrets
 
-### `CLIENT_SECRET` | `secrets/clientsecret.json`
+### `CLIENT_SECRET` | `secrets/client_secret.json`
 
-### `TOKEN_CACHE` | `secrets/tokencache.json`
+### `TOKEN_CACHE` | `secrets/token_cache.json`
 
 ### `ADMIN_PASSWORD_HASH` | `secrets/admin_password_hash`
 

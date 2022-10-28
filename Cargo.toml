@@ -19,6 +19,7 @@ color-eyre = "0.6"
 grib = { git = "https://github.com/noritada/grib-rs.git" }
 chrono = "0.4"
 chrono-tz = "0.6"
+jsonwebtoken = "8.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["fs"] }
 reqwest = "0.11.12"
@@ -29,7 +30,7 @@ html-builder = "0.4"
 http-body = "0.4"
 humantime = "2.1" # TODO: remove and replace with proper localization/locale
 url = { version = "2.3", features = ["serde"] }
-secrecy = "0.8"
+secrecy = { version = "0.8", features = ["serde"] }
 serde_urlencoded = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -54,6 +55,7 @@ native-tls = { version = "0.2", features = ["vendored"] } # use vendored for MUS
 
 [dev-dependencies]
 wiremock = "0.5"
+insta = { version = "1.21", features = ["json"] }
 
 [workspace]
 members = ["open-meteo", "open-topo-data", "admin-password-hash"]
