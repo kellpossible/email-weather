@@ -616,6 +616,7 @@ dependencies = [
  "ansi-to-html",
  "async-imap",
  "async-native-tls",
+ "async-trait",
  "axum",
  "base64",
  "bcrypt",

@@ -1,15 +1,19 @@
-use std::{
-    borrow::{Borrow, Cow},
-    path::Path,
-};
+use std::{path::Path, pin::Pin};
 
-use color_eyre::Help;
+use async_trait::async_trait;
 use eyre::Context;
 use oauth2::{
-    basic::BasicClient, AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    PkceCodeChallenge, RedirectUrl, RefreshToken, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AccessToken, AuthUrl, ClientId, ClientSecret, ErrorResponse, RedirectUrl,
+    RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+
+mod device;
+mod installed;
+
+pub use device::DeviceFlow;
+pub use installed::InstalledFlow;
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -33,6 +37,7 @@ pub struct InstalledClientSecretDefinition {
     /// as ID tokens, signed by the authentication provider.
     pub auth_provider_x509_cert_url: Option<url::Url>,
     /// The redirect uris.
+    #[serde(default)]
     pub redirect_uris: Vec<RedirectUrl>,
 }
 
@@ -97,6 +102,26 @@ impl TokenCache {
     }
 }
 
+fn map_request_token_error<RE, T>(error: RequestTokenError<RE, T>) -> eyre::Error
+where
+    RE: std::error::Error + Send + Sync,
+    T: ErrorResponse + Send + Sync,
+{
+    match error {
+        oauth2::RequestTokenError::ServerResponse(response) => {
+            let response_json = match serde_json::to_string_pretty(&response) {
+                Ok(response_json) => response_json,
+                Err(error) => format!(
+                    "Unable to display response, error while serializing response to json ({})",
+                    error
+                ),
+            };
+            eyre::eyre!("Server returned error response:\n{}", response_json)
+        }
+        _ => eyre::Error::from(error),
+    }
+}
+
 async fn refresh_token(
     client: &BasicClient,
     refresh_token: &RefreshToken,
@@ -107,19 +132,7 @@ async fn refresh_token(
         .add_scopes(scopes)
         .request_async(oauth2::reqwest::async_http_client)
         .await
-        .map_err(|error| match error {
-            oauth2::RequestTokenError::ServerResponse(response) => {
-                let response_json = match serde_json::to_string_pretty(&response) {
-                    Ok(response_json) => response_json,
-                    Err(error) => format!(
-                        "Unable to display response, error while serializing response to json ({})",
-                        error
-                    ),
-                };
-                eyre::eyre!("Server returned error response:\n{}", response_json)
-            }
-            _ => eyre::Error::from(error),
-        })
+        .map_err(map_request_token_error)
         .wrap_err("Error while exchanging refresh token")?;
 
     // Re-use the refresh token if none is provided
@@ -131,63 +144,20 @@ async fn refresh_token(
     Ok(response)
 }
 
-async fn obtain_new_token(
-    client: &BasicClient,
-    scopes: Vec<Scope>,
-) -> eyre::Result<StandardTokenResponse> {
-    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-    let redirect_uri = RedirectUrl::new("urn:ietf:wg:oauth:2.0:oob".to_string())?;
-    let (auth_url, _csrf_token) = client
-        .authorize_url(CsrfToken::new_random)
-        .add_scopes(scopes)
-        .set_pkce_challenge(pkce_challenge)
-        // Out of band copy/paste code
-        .set_redirect_uri(Cow::Borrowed(&redirect_uri))
-        .url();
-
-    tracing::info!(
-        "Open this URL to obtain the OAUTH2 authentication code for your email account:\n{}",
-        auth_url
-    );
-
-    let code: AuthorizationCode =
-        AuthorizationCode::new(rpassword::prompt_password("Enter the code:")?);
-    tracing::debug!("code.len() = {}", code.secret().len());
-
-    client
-        .exchange_code(code)
-        .set_pkce_verifier(pkce_verifier)
-        .set_redirect_uri(Cow::Borrowed(&redirect_uri))
-        .request_async(oauth2::reqwest::async_http_client)
-        .await
-        .map_err(|error| match &error {
-            oauth2::RequestTokenError::ServerResponse(server_response) => {
-                let server_response_message = match serde_json::to_string_pretty(&server_response) {
-                    Ok(server_response) => server_response,
-                    Err(err) => format!("Error serializing server response: {:?}", err),
-                };
-                eyre::Error::from(error)
-                    .with_section(|| format!("Server Response: {}", server_response_message))
-            }
-            _ => eyre::Error::from(error),
-        })
-        .wrap_err("Error exchanging authentication code")
+#[async_trait]
+pub trait AuthenticationFlow {
+    async fn authenticate(&self) -> eyre::Result<AccessToken>;
 }
 
-pub async fn authenticate(
-    client_secret: ClientSecretDefinition,
+async fn authenticate_with_token_cache<'a, Fut>(
+    client: &'a BasicClient,
     scopes: Vec<Scope>,
     token_cache_path: &Path,
-) -> eyre::Result<AccessToken> {
-    let client: BasicClient = match client_secret {
-        ClientSecretDefinition::Installed(definition) => BasicClient::new(
-            definition.client_id,
-            Some(definition.client_secret),
-            definition.auth_uri,
-            Some(definition.token_uri),
-        ),
-    };
-
+    obtain_new_token: impl FnOnce(&'a BasicClient, Vec<Scope>) -> Fut,
+) -> eyre::Result<AccessToken>
+where
+    Fut: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
+{
     let token_cache: TokenCache = if token_cache_path.exists() {
         tracing::debug!(
             "Token cache file {:?} exists, attempting to read from file",
@@ -206,12 +176,12 @@ pub async fn authenticate(
             tracing::debug!("Token in cache has expired.");
             let token_response = if let Some(token) = token_cache.response.refresh_token() {
                 tracing::debug!("Using refresh token to automatically obtain a new token");
-                refresh_token(&client, token, scopes)
+                refresh_token(&client, token, scopes.clone())
                     .await
                     .wrap_err("Error while refreshing token")?
             } else {
                 tracing::debug!("No refresh token available, manually obtaining a new token");
-                obtain_new_token(&client, scopes)
+                obtain_new_token(&client, scopes.clone())
                     .await
                     .wrap_err("Error while obtaining new token")?
             };
@@ -226,7 +196,7 @@ pub async fn authenticate(
             "Token cache file {:?} does not exist, obtaining new token",
             token_cache_path
         );
-        let token_response = obtain_new_token(&client, scopes).await?;
+        let token_response = obtain_new_token(&client, scopes.clone()).await?;
         tracing::debug!("Successfully obtained new token!");
         let token_cache = TokenCache::try_new(token_response)?;
         token_cache.write(token_cache_path).await?;

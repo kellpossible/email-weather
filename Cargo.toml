@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-trait = "0.1"
 async-imap = { version = "0.6.0", default-features = false, features = ["runtime-tokio"]}
 async-native-tls = { version = "0.4", default-features = false, features = ["runtime-tokio"] }
 ansi-to-html = { version = "0.1", features = ["lazy-init"] }

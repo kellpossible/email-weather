@@ -5,7 +5,7 @@ use std::{borrow::Cow, sync::Arc};
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use oauth2::AccessToken;
+use oauth2::{AccessToken, DeviceAuthorizationUrl};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -13,7 +13,9 @@ use tokio::{
 };
 use tracing::Instrument;
 
-use crate::{inreach, secrets::ImapSecrets, task::run_retry_log_errors};
+use crate::{
+    inreach, oauth2::AuthenticationFlow, secrets::ImapSecrets, task::run_retry_log_errors,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Email {
@@ -247,13 +249,17 @@ async fn receive_emails_impl(
             oauth2::Scope::new("https://mail.google.com/".to_string()),
         ];
 
-        let access_token = crate::oauth2::authenticate(
+        let flow = crate::oauth2::InstalledFlow::new(
             imap_secrets.client_secret.clone(),
             scopes,
             &imap_secrets.token_cache_path,
-        )
-        .await
-        .wrap_err("Error obtaining OAUTH2 access token")?;
+            // DeviceAuthorizationUrl::new("https://oauth2.googleapis.com/device/code".into())?,
+        );
+
+        let access_token = flow
+            .authenticate()
+            .await
+            .wrap_err("Error obtaining OAUTH2 access token")?;
 
         let gmail_auth = GmailOAuth2 {
             user: String::from(imap_username),
