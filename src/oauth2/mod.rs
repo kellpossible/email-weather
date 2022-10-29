@@ -1,13 +1,21 @@
-use std::{path::Path, pin::Pin};
+use std::{path::Path, pin::Pin, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use eyre::Context;
-use oauth2::{
-    basic::BasicClient, AccessToken, AuthUrl, ClientId, ClientSecret, ErrorResponse, RedirectUrl,
-    RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
+use axum::{
+    response::{Html, IntoResponse},
+    routing::get,
+    Router,
 };
+use eyre::Context;
+use html_builder::Html5;
+use oauth2::{
+    basic::BasicClient, AccessToken, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    ErrorResponse, RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
+};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
+use tokio::sync::{mpsc, Mutex};
 
 mod device;
 mod installed;
@@ -17,18 +25,25 @@ pub use device::DeviceFlow;
 pub use installed::InstalledFlow;
 pub use service_account::ServiceAccountFlow;
 
-pub enum ConsetRedirect {
+pub enum ConsentRedirect {
     /// Out of band redirect, exchange code using user's clipboard.
     /// **Warning**: Google has deprecated this method.
     OutOfBand,
+    Http {
+        /// Channel to recieve redirect result from http server.
+        redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
+        /// Url to use for sending the redirect.
+        url: RedirectUrl,
+    },
 }
 
-impl ConsetRedirect {
+impl ConsentRedirect {
     /// Obtain the redirect URL
     pub fn redirect_url(&self) -> RedirectUrl {
         match self {
-            ConsetRedirect::OutOfBand => RedirectUrl::new("urn:ietf:wg:oauth:2.0:oob".to_string())
+            ConsentRedirect::OutOfBand => RedirectUrl::new("urn:ietf:wg:oauth:2.0:oob".to_string())
                 .expect("Expected oob url to be formatted correctly"),
+            ConsentRedirect::Http { url, .. } => url.clone(),
         }
     }
 }
@@ -264,6 +279,62 @@ where
     }
 
     Ok(token_cache.response.access_token().clone())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RedirectParameters {
+    pub code: AuthorizationCode,
+    pub state: CsrfToken,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RedirectError {
+    #[error("Internal server error")]
+    InternalServerError(#[from] eyre::Error),
+}
+
+impl From<std::fmt::Error> for RedirectError {
+    fn from(error: std::fmt::Error) -> Self {
+        Self::InternalServerError(eyre::Error::from(error))
+    }
+}
+
+impl IntoResponse for RedirectError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            RedirectError::InternalServerError(error) => {
+                tracing::error!("Error receiving redirect: {:?}", error);
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        }
+    }
+}
+
+async fn get_redirect(
+    axum::extract::Query(parameters): axum::extract::Query<RedirectParameters>,
+    tx: mpsc::Sender<RedirectParameters>,
+) -> axum::response::Result<Html<String>, RedirectError> {
+    use std::fmt::Write;
+    tx.send_timeout(parameters, Duration::from_millis(50))
+        .await
+        .wrap_err("Error sending redirect authorization code via channel")?;
+    let mut buf = html_builder::Buffer::new();
+    let mut html = buf.html();
+    let mut head = html.head();
+    let mut title = head.title();
+    write!(title, "email-weather Authentication Successful")?;
+    let mut body = html.body();
+    write!(body, "Authentication with the email-weather service was successful, you may close this browser tab.")?;
+
+    Ok(Html(buf.finish()))
+}
+
+/// Http server for accepting OAUTH2 authentication redirects.
+pub fn redirect_server(tx: mpsc::Sender<RedirectParameters>) -> Router {
+    Router::new().route(
+        "/",
+        get(|path| async move { get_redirect(path, tx.clone()).await }),
+    )
 }
 
 #[cfg(test)]

@@ -5,17 +5,17 @@ use std::{borrow::Cow, sync::Arc};
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use oauth2::AccessToken;
+use oauth2::{AccessToken, AuthorizationCode, RedirectUrl};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::Mutex,
+    sync::{broadcast, mpsc, Mutex},
 };
 use tracing::Instrument;
 
 use crate::{
     inreach,
-    oauth2::{AuthenticationFlow, ConsetRedirect},
+    oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
     secrets::ImapSecrets,
     task::run_retry_log_errors,
 };
@@ -239,6 +239,7 @@ where
 async fn receive_emails_impl(
     process_sender: Arc<Mutex<yaque::Sender>>,
     imap_secrets: &ImapSecrets,
+    oauth_redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
 ) -> eyre::Result<()> {
     loop {
         tracing::debug!("Starting receiving emails job");
@@ -262,7 +263,11 @@ async fn receive_emails_impl(
         // );
 
         let flow = crate::oauth2::InstalledFlow::new(
-            ConsetRedirect::OutOfBand,
+            ConsentRedirect::Http {
+                redirect_rx: oauth_redirect_rx.clone(),
+                // url: RedirectUrl::new("https://email-weather.fly.dev/oauth2".to_string())?
+                url: RedirectUrl::new("http://localhost:3000/oauth2".to_string())?
+            },
             imap_secrets
                 .client_secret
                 .clone()
@@ -319,17 +324,20 @@ async fn receive_emails_impl(
 }
 
 /// This function spawns a task to receive emails via IMAP, and submit them for processing.
-#[tracing::instrument(skip(process_sender, shutdown_rx, imap_secrets))]
+#[tracing::instrument(skip(process_sender, shutdown_rx, oauth_redirect_rx, imap_secrets))]
 pub async fn receive_emails(
     process_sender: yaque::Sender,
-    shutdown_rx: tokio::sync::broadcast::Receiver<()>,
+    shutdown_rx: broadcast::Receiver<()>,
+    oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
     imap_secrets: &ImapSecrets,
 ) {
     let process_sender = Arc::new(Mutex::new(process_sender));
+    let oauth_redirect_rx = Arc::new(Mutex::new(oauth_redirect_rx));
     run_retry_log_errors(
         move || {
             let process_sender = process_sender.clone();
-            async move { receive_emails_impl(process_sender, imap_secrets).await }
+            let oauth_redirect_rx = oauth_redirect_rx.clone();
+            async move { receive_emails_impl(process_sender, imap_secrets, oauth_redirect_rx).await }
         },
         shutdown_rx,
     )

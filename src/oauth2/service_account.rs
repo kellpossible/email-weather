@@ -1,3 +1,5 @@
+//! OAUTH2 authentication with a Google service account.
+
 use std::path::PathBuf;
 
 use super::{authenticate_with_token_cache, AuthenticationFlow, StandardTokenResponse};
@@ -20,6 +22,8 @@ enum KeyKind {
 #[serde(transparent)]
 struct ClientEmail(String);
 
+/// Service account private key json file.
+#[allow(unused)]
 #[derive(Clone, Deserialize)]
 pub struct Key {
     #[serde(rename = "type")]
@@ -131,6 +135,8 @@ async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<Standar
     }
 }
 
+
+/// A flow for authenticating with a Google service account.
 pub struct ServiceAccountFlow {
     key: Key,
     scopes: Vec<Scope>,

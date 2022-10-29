@@ -2,25 +2,26 @@ use std::net::SocketAddr;
 
 use axum::{http::HeaderValue, response::IntoResponse, Router};
 use eyre::Context;
-use reqwest::{get, StatusCode};
+use reqwest::StatusCode;
 use secrecy::{ExposeSecret, SecretString};
+use tokio::sync::mpsc;
 use tower_http::auth::AuthorizeRequest;
 
-use crate::reporting;
+use crate::{reporting, oauth2::RedirectParameters};
 
 /// Options for running this application's http server.
 pub struct Options {
     /// Options relating to reporting/logging.
     pub reporting: &'static reporting::Options,
-    /// `admin` user's password hash. See [`MyBasicAuth`].
+    /// `admin` user's password hash using `bcrypt`. See [`MyBasicAuth`].
     pub admin_password_hash: Option<&'static SecretString>,
+    /// A channel to send authorization codes received.
+    pub oauth_redirect_tx: mpsc::Sender<RedirectParameters>,
 }
 
 // TODO: turn this into a generic web server, and provide a channel for transmitting the
 // result of OAUTH2 redirect back to the InstalledFlow.
-/// Serve the application logs.
-///
-/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
+/// Run this service's http server.
 #[tracing::instrument(skip(shutdown_rx, options))]
 pub async fn serve_http(mut shutdown_rx: tokio::sync::broadcast::Receiver<()>, options: Options) {
     tokio::select! {
@@ -106,11 +107,11 @@ fn check_auth<B>(
     credentials.username == "admin" && password_match
 }
 
-/// Implementation for serving logs.
-///
-/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
 async fn serve_http_impl(options: Options) {
-    let app = Router::new();
+    let app = Router::new().nest(
+        "/oauth2/",
+        crate::oauth2::redirect_server(options.oauth_redirect_tx),
+    );
 
     let addr: SocketAddr = if let Ok(var) = std::env::var("LISTEN_ADDR") {
         var.parse()

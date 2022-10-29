@@ -9,12 +9,12 @@ use oauth2::{
 
 use super::{
     authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
-    ConsetRedirect, StandardTokenResponse,
+    ConsentRedirect, StandardTokenResponse,
 };
 
 /// Used for the "installed" authentication flow.
 pub struct InstalledFlow {
-    redirect: ConsetRedirect,
+    redirect: ConsentRedirect,
     scopes: Vec<Scope>,
     token_cache_path: PathBuf,
     client: BasicClient,
@@ -23,7 +23,7 @@ pub struct InstalledFlow {
 impl InstalledFlow {
     /// Create a new [`InstalledFlow`].
     pub fn new(
-        redirect: ConsetRedirect,
+        redirect: ConsentRedirect,
         client_secret: ClientSecretDefinition,
         scopes: Vec<Scope>,
         token_cache_path: PathBuf,
@@ -45,7 +45,7 @@ impl InstalledFlow {
     async fn obtain_new_token(&self, scopes: Vec<Scope>) -> eyre::Result<StandardTokenResponse> {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let redirect_uri = self.redirect.redirect_url();
-        let (auth_url, _csrf_token) = self
+        let (auth_url, csrf_state) = self
             .client
             .authorize_url(CsrfToken::new_random)
             .add_scopes(scopes)
@@ -54,14 +54,29 @@ impl InstalledFlow {
             .set_redirect_uri(Cow::Borrowed(&redirect_uri))
             .url();
 
-        tracing::info!(
-            "Open this URL to obtain the OAUTH2 authentication code for your email account:\n{}",
-            auth_url
-        );
-
-        let code: AuthorizationCode = match self.redirect {
-            ConsetRedirect::OutOfBand => {
+        let code: AuthorizationCode = match &self.redirect {
+            ConsentRedirect::OutOfBand => {
+                tracing::info!(
+                    "Open this URL to obtain the OAUTH2 authentication code for your email account:\n{}",
+                    auth_url
+                );
                 AuthorizationCode::new(rpassword::prompt_password("Enter the code:")?)
+            }
+            ConsentRedirect::Http { redirect_rx, .. } => {
+                tracing::info!(
+                    "Open this URL to obtain the OAUTH2 authentication approval for your email account:\n{}",
+                    auth_url
+                );
+
+                let mut rx = redirect_rx.lock().await;
+                let parameters = rx.recv()
+                    .await
+                    .ok_or_else(|| eyre::eyre!("Redirect receiving channel has been closed, there is no code to be received"))?;
+
+                if parameters.state.secret() != csrf_state.secret() {
+                    return Err(eyre::eyre!("CSRF states don't match"));
+                }
+                parameters.code
             }
         };
 

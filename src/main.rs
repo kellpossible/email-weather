@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use email_weather::{
     fs,
+    oauth2::RedirectParameters,
     process::process_emails,
     receive::receive_emails,
     reply::send_replies,
@@ -10,7 +11,10 @@ use email_weather::{
     serve_http,
 };
 use eyre::Context;
-use tokio::signal::unix::SignalKind;
+use tokio::{
+    signal::unix::SignalKind,
+    sync::{broadcast, mpsc},
+};
 use tracing_appender::rolling::Rotation;
 
 #[tokio::main]
@@ -31,10 +35,12 @@ async fn main() -> eyre::Result<()> {
 
     let http_client = reqwest::Client::new();
 
-    let (shutdown_tx, emails_receive_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+    let (shutdown_tx, emails_receive_shutdown_rx) = broadcast::channel::<()>(1);
     let emails_process_shutdown_rx = shutdown_tx.subscribe();
     let send_replies_shutdown_rx = shutdown_tx.subscribe();
     let serve_http_shutdown_rx = shutdown_tx.subscribe();
+
+    let (oauth_redirect_tx, oauth_redirect_rx) = mpsc::channel::<RedirectParameters>(1);
 
     let ctrl_c_shutdown_tx = shutdown_tx.clone();
     tokio::spawn(async move {
@@ -67,8 +73,6 @@ async fn main() -> eyre::Result<()> {
     fs::create_dir_if_not_exists(&secrets_dir)
         .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
 
-    // install_secrets().wrap_err("Error while installing secrets")?;
-
     let process_queue_path = data_dir.join("process");
     let reply_queue_path = data_dir.join("reply");
     let (process_sender, process_receiver) = yaque::channel(&process_queue_path)
@@ -85,6 +89,7 @@ async fn main() -> eyre::Result<()> {
     let receive_join = tokio::spawn(receive_emails(
         process_sender,
         emails_receive_shutdown_rx,
+        oauth_redirect_rx,
         &secrets.imap_secrets,
     ));
     let process_join = tokio::spawn(process_emails(
@@ -102,6 +107,7 @@ async fn main() -> eyre::Result<()> {
     let serve_http_options = serve_http::Options {
         reporting: reporting_options,
         admin_password_hash: secrets.admin_password_hash.as_ref(),
+        oauth_redirect_tx,
     };
     let serve_http_join = tokio::spawn(serve_http::serve_http(
         serve_http_shutdown_rx,
