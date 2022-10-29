@@ -1,13 +1,16 @@
-use super::StandardTokenResponse;
+use std::path::PathBuf;
+
+use super::{authenticate_with_token_cache, AuthenticationFlow, StandardTokenResponse};
+use async_trait::async_trait;
 use chrono::serde::ts_seconds::serialize as to_ts;
 use color_eyre::Help;
 use eyre::Context;
 use jsonwebtoken::EncodingKey;
-use oauth2::{basic::BasicClient, AuthUrl, ClientId, Scope, TokenUrl};
+use oauth2::{AccessToken, AuthUrl, ClientId, Scope, TokenUrl};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Copy, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum KeyKind {
     ServiceAccount,
@@ -17,7 +20,7 @@ enum KeyKind {
 #[serde(transparent)]
 struct ClientEmail(String);
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Key {
     #[serde(rename = "type")]
     kind: KeyKind,
@@ -100,12 +103,20 @@ async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<Standar
     body.push_str(&*grant_type);
     body.push_str("&assertion=");
     body.push_str(&assertion);
-    let response = client.post(&*key.token_uri).body(body).send().await?;
+    let response = client
+        .post(&*key.token_uri)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await?;
 
     let status = response.status();
     if status.is_success() {
-        // Parse the token response
-        todo!()
+        let token: StandardTokenResponse = response
+            .json()
+            .await
+            .wrap_err("Error parsing token response")?;
+        Ok(token)
     } else {
         let body_json: Option<serde_json::Value> = response.json().await.ok();
         let body_json_string: Option<String> =
@@ -117,6 +128,37 @@ async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<Standar
         } else {
             error
         })
+    }
+}
+
+pub struct ServiceAccountFlow {
+    key: Key,
+    scopes: Vec<Scope>,
+    token_cache_path: PathBuf,
+}
+
+impl ServiceAccountFlow {
+    /// Create a new [`ServiceAccountFlow`].
+    pub fn new(key: Key, scopes: Vec<Scope>, token_cache_path: PathBuf) -> Self {
+        Self {
+            key,
+            scopes,
+            token_cache_path,
+        }
+    }
+}
+
+#[async_trait]
+impl AuthenticationFlow for ServiceAccountFlow {
+    async fn authenticate(&self) -> eyre::Result<AccessToken> {
+        authenticate_with_token_cache(
+            self.scopes.clone(),
+            &self.token_cache_path,
+            |scopes| obtain_new_token(&self.key, scopes),
+            // Refresh involves just obtaining another token (no refresh token involved).
+            |_, scopes| obtain_new_token(&self.key, scopes),
+        )
+        .await
     }
 }
 

@@ -13,15 +13,14 @@ use serde::{Deserialize, Serialize};
 use crate::oauth2::map_request_token_error;
 
 use super::{
-    authenticate_with_token_cache, AuthenticationFlow, ClientSecretDefinition,
+    authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
     StandardTokenResponse,
 };
 
 pub struct DeviceFlow {
-    client_secret: ClientSecretDefinition,
+    client: BasicClient,
     scopes: Vec<Scope>,
     token_cache_path: PathBuf,
-    device_authorization_url: DeviceAuthorizationUrl,
 }
 
 impl DeviceFlow {
@@ -32,11 +31,19 @@ impl DeviceFlow {
         token_cache_path: impl Into<PathBuf>,
         device_authorization_url: DeviceAuthorizationUrl,
     ) -> Self {
+        let client = BasicClient::new(
+            client_secret.client_id().clone(),
+            Some(client_secret.client_secret().clone()),
+            client_secret.auth_url().clone(),
+            Some(client_secret.token_url().clone()),
+        )
+        .set_device_authorization_url(device_authorization_url)
+        .set_auth_type(oauth2::AuthType::RequestBody);
+
         Self {
-            client_secret,
+            client,
             scopes,
             token_cache_path: token_cache_path.into(),
-            device_authorization_url,
         }
     }
 }
@@ -44,22 +51,11 @@ impl DeviceFlow {
 #[async_trait]
 impl AuthenticationFlow for DeviceFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
-        let client: BasicClient = match &self.client_secret {
-            ClientSecretDefinition::Installed(definition) => BasicClient::new(
-                definition.client_id.clone(),
-                Some(definition.client_secret.clone()),
-                definition.auth_uri.clone(),
-                Some(definition.token_uri.clone()),
-            ),
-        }
-        .set_device_authorization_url(self.device_authorization_url.clone())
-        .set_auth_type(oauth2::AuthType::RequestBody);
-
         authenticate_with_token_cache(
-            &client,
             self.scopes.clone(),
             &self.token_cache_path,
-            obtain_new_token,
+            |scopes| obtain_new_token(&self.client, scopes),
+            |rt, scopes| refresh_token(&self.client, rt, scopes),
         )
         .await
     }

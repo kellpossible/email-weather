@@ -11,15 +11,62 @@ use std::future::Future;
 
 mod device;
 mod installed;
-mod service_account;
+pub mod service_account;
 
 pub use device::DeviceFlow;
 pub use installed::InstalledFlow;
+pub use service_account::ServiceAccountFlow;
+
+pub enum ConsetRedirect {
+    /// Out of band redirect, exchange code using user's clipboard.
+    /// **Warning**: Google has deprecated this method.
+    OutOfBand,
+}
+
+impl ConsetRedirect {
+    /// Obtain the redirect URL
+    pub fn redirect_url(&self) -> RedirectUrl {
+        match self {
+            ConsetRedirect::OutOfBand => RedirectUrl::new("urn:ietf:wg:oauth:2.0:oob".to_string())
+                .expect("Expected oob url to be formatted correctly"),
+        }
+    }
+}
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientSecretDefinition {
     Installed(InstalledClientSecretDefinition),
+    Web(InstalledClientSecretDefinition),
+}
+
+impl ClientSecretDefinition {
+    pub fn client_id(&self) -> &ClientId {
+        match self {
+            ClientSecretDefinition::Installed(s) => &s.client_id,
+            ClientSecretDefinition::Web(s) => &s.client_id,
+        }
+    }
+    pub fn client_secret(&self) -> &ClientSecret {
+        match self {
+            ClientSecretDefinition::Installed(s) => &s.client_secret,
+            ClientSecretDefinition::Web(s) => &s.client_secret,
+        }
+    }
+
+    pub fn auth_url(&self) -> &AuthUrl {
+        match self {
+            ClientSecretDefinition::Installed(s) => &s.auth_uri,
+            ClientSecretDefinition::Web(s) => &s.auth_uri,
+        }
+    }
+
+    pub fn token_url(&self) -> &TokenUrl {
+        match self {
+            ClientSecretDefinition::Installed(s) => &s.token_uri,
+            ClientSecretDefinition::Web(s) => &s.token_uri,
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -125,11 +172,11 @@ where
 
 async fn refresh_token(
     client: &BasicClient,
-    refresh_token: &RefreshToken,
+    refresh_token: RefreshToken,
     scopes: Vec<Scope>,
 ) -> eyre::Result<StandardTokenResponse> {
     let mut response = client
-        .exchange_refresh_token(refresh_token)
+        .exchange_refresh_token(&refresh_token)
         .add_scopes(scopes)
         .request_async(oauth2::reqwest::async_http_client)
         .await
@@ -145,19 +192,22 @@ async fn refresh_token(
     Ok(response)
 }
 
+/// A flow for performing authentication using OAUTH2.
 #[async_trait]
 pub trait AuthenticationFlow {
+    /// Authenticate using OAUTH2 provider.
     async fn authenticate(&self) -> eyre::Result<AccessToken>;
 }
 
-async fn authenticate_with_token_cache<'a, Fut>(
-    client: &'a BasicClient,
+async fn authenticate_with_token_cache<'a, Fut1, Fut2>(
     scopes: Vec<Scope>,
     token_cache_path: &Path,
-    obtain_new_token: impl FnOnce(&'a BasicClient, Vec<Scope>) -> Fut,
+    obtain_new_token: impl FnOnce(Vec<Scope>) -> Fut1,
+    refresh_token: impl FnOnce(RefreshToken, Vec<Scope>) -> Fut2,
 ) -> eyre::Result<AccessToken>
 where
-    Fut: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
+    Fut1: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
+    Fut2: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
 {
     let token_cache: TokenCache = if token_cache_path.exists() {
         tracing::debug!(
@@ -177,12 +227,12 @@ where
             tracing::debug!("Token in cache has expired.");
             let token_response = if let Some(token) = token_cache.response.refresh_token() {
                 tracing::debug!("Using refresh token to automatically obtain a new token");
-                refresh_token(&client, token, scopes.clone())
+                refresh_token(token.clone(), scopes.clone())
                     .await
                     .wrap_err("Error while refreshing token")?
             } else {
                 tracing::debug!("No refresh token available, manually obtaining a new token");
-                obtain_new_token(&client, scopes.clone())
+                obtain_new_token(scopes.clone())
                     .await
                     .wrap_err("Error while obtaining new token")?
             };
@@ -197,7 +247,7 @@ where
             "Token cache file {:?} does not exist, obtaining new token",
             token_cache_path
         );
-        let token_response = obtain_new_token(&client, scopes.clone()).await?;
+        let token_response = obtain_new_token(scopes.clone()).await?;
         tracing::debug!("Successfully obtained new token!");
         let token_cache = TokenCache::try_new(token_response)?;
         token_cache.write(token_cache_path).await?;

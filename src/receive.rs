@@ -5,7 +5,7 @@ use std::{borrow::Cow, sync::Arc};
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use oauth2::{AccessToken, DeviceAuthorizationUrl};
+use oauth2::AccessToken;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -14,7 +14,10 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
-    inreach, oauth2::AuthenticationFlow, secrets::ImapSecrets, task::run_retry_log_errors,
+    inreach,
+    oauth2::{AuthenticationFlow, ConsetRedirect},
+    secrets::ImapSecrets,
+    task::run_retry_log_errors,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -249,10 +252,23 @@ async fn receive_emails_impl(
             oauth2::Scope::new("https://mail.google.com/".to_string()),
         ];
 
+        // let flow = crate::oauth2::ServiceAccountFlow::new(
+        //     imap_secrets
+        //         .service_account_key
+        //         .clone()
+        //         .ok_or_else(|| eyre::eyre!("Service account key secret has not been provided"))?,
+        //     scopes,
+        //     imap_secrets.token_cache_path.clone(),
+        // );
+
         let flow = crate::oauth2::InstalledFlow::new(
-            imap_secrets.client_secret.clone(),
+            ConsetRedirect::OutOfBand,
+            imap_secrets
+                .client_secret
+                .clone()
+                .ok_or_else(|| eyre::eyre!("Client secret has not been provided, and is required for Installed OAUTH2 flow"))?,
             scopes,
-            &imap_secrets.token_cache_path,
+            imap_secrets.token_cache_path.clone(),
             // DeviceAuthorizationUrl::new("https://oauth2.googleapis.com/device/code".into())?,
         );
 
@@ -271,7 +287,7 @@ async fn receive_emails_impl(
         let mut imap_session: async_imap::Session<_> = imap_client
             .authenticate("XOAUTH2", &gmail_auth)
             .await
-            .map_err(|e| e.0)
+            .map_err(|(error, _)| error)
             .wrap_err("Error authenticating with XOAUTH2")?;
         // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
         tracing::info!("Successful IMAP session login");
