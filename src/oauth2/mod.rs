@@ -289,13 +289,9 @@ mod test {
         let definition: ClientSecretDefinition =
             serde_json::from_str(client_secret_definition).unwrap();
 
-        match definition {
-            ClientSecretDefinition::Installed(definition) => {
-                assert_eq!(
-                    "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",
-                    definition.client_secret.secret()
-                );
-            }
-        }
+        assert_eq!(
+            "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",
+            definition.client_secret().secret()
+        );
     }
 }

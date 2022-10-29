@@ -12,4 +12,5 @@ pub mod receive;
 pub mod reply;
 pub mod reporting;
 pub mod secrets;
+pub mod serve_http;
 pub mod task;

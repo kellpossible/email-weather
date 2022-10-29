@@ -5,8 +5,9 @@ use email_weather::{
     process::process_emails,
     receive::receive_emails,
     reply::send_replies,
-    reporting::{serve_logs, setup, Options},
+    reporting::{self, setup},
     secrets::Secrets,
+    serve_http,
 };
 use eyre::Context;
 use tokio::signal::unix::SignalKind;
@@ -21,7 +22,7 @@ async fn main() -> eyre::Result<()> {
     fs::create_dir_if_not_exists(&data_dir)
         .wrap_err_with(|| format!("Unable to create data directory {:?}", data_dir))?;
 
-    let reporting_options: &'static Options = Box::leak(Box::new(Options {
+    let reporting_options: &'static reporting::Options = Box::leak(Box::new(reporting::Options {
         data_dir: data_dir.clone(),
         log_rotation: Rotation::DAILY,
     }));
@@ -33,7 +34,7 @@ async fn main() -> eyre::Result<()> {
     let (shutdown_tx, emails_receive_shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
     let emails_process_shutdown_rx = shutdown_tx.subscribe();
     let send_replies_shutdown_rx = shutdown_tx.subscribe();
-    let serve_logs_shutdown_rx = shutdown_tx.subscribe();
+    let serve_http_shutdown_rx = shutdown_tx.subscribe();
 
     let ctrl_c_shutdown_tx = shutdown_tx.clone();
     tokio::spawn(async move {
@@ -98,17 +99,16 @@ async fn main() -> eyre::Result<()> {
         http_client,
     ));
 
-    if let Some(admin_password_hash) = &secrets.admin_password_hash {
-        let serve_logs_join = tokio::spawn(serve_logs(
-            serve_logs_shutdown_rx,
-            reporting_options,
-            admin_password_hash,
-        ));
-        serve_logs_join.await?;
-    } else {
-        tracing::info!("No ADMIN_PASSWORD environment variable specified, logs will not be served");
-    }
+    let serve_http_options = serve_http::Options {
+        reporting: reporting_options,
+        admin_password_hash: secrets.admin_password_hash.as_ref(),
+    };
+    let serve_http_join = tokio::spawn(serve_http::serve_http(
+        serve_http_shutdown_rx,
+        serve_http_options,
+    ));
 
+    serve_http_join.await?;
     receive_join.await?;
     process_join.await?;
     reply_join.await?;

@@ -30,7 +30,7 @@ use tracing_appender::{
 };
 use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use crate::fs;
+use crate::{fs, serve_http::MyBasicAuth};
 
 /// Options for writing to log file.
 #[derive(Clone)]
@@ -216,145 +216,6 @@ pub fn setup(options: &Options) -> eyre::Result<Guard> {
     })
 }
 
-/// Serve the application logs.
-///
-/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
-#[tracing::instrument(skip(shutdown_rx, options, admin_password_hash))]
-pub async fn serve_logs(
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<()>,
-    options: &'static Options,
-    admin_password_hash: &'static SecretString,
-) {
-    tokio::select! {
-        result = shutdown_rx.recv() => {
-            tracing::debug!("Received shutdown broadcast");
-            let result = result.wrap_err("Error receiving shutdown message");
-            if let Err(error) = &result {
-                tracing::error!("{:?}", error);
-            }
-        }
-        _ = serve_logs_impl(options, &admin_password_hash) => {}
-    }
-}
-
-/// Basic authentication for accessing logs.
-#[derive(Clone, Copy)]
-struct MyBasicAuth {
-    /// `admin` user password hash, hashed using bcrypt.
-    admin_password_hash: &'static SecretString,
-}
-
-impl<B> AuthorizeRequest<B> for MyBasicAuth {
-    type ResponseBody = http_body::combinators::UnsyncBoxBody<axum::body::Bytes, axum::Error>;
-
-    fn authorize(
-        &mut self,
-        request: &mut axum::http::Request<B>,
-    ) -> Result<(), axum::http::Response<Self::ResponseBody>> {
-        if check_auth(request, &self.admin_password_hash) {
-            Ok(())
-        } else {
-            let unauthorized_response = axum::http::Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .header(
-                    "WWW-Authenticate",
-                    r#"Basic realm="User Visible Realm", charset="UTF-8""#,
-                )
-                .body(axum::body::Body::empty())
-                .unwrap();
-
-            Err(unauthorized_response.into_response())
-        }
-    }
-}
-
-struct BasicCredentials {
-    username: String,
-    password: SecretString,
-}
-
-fn parse_auth_header_credentials(header: &HeaderValue) -> Option<BasicCredentials> {
-    let header_str: &str = header.to_str().ok()?;
-    let credentials_base64: &str = header_str.split_once("Basic ")?.1;
-    let credentials = String::from_utf8(base64::decode(credentials_base64).ok()?).ok()?;
-    let (username, password) = credentials.split_once(':')?;
-    Some(BasicCredentials {
-        username: username.to_string(),
-        password: SecretString::new(password.to_string()),
-    })
-}
-
-/// Check authorization for a request. Returns `true` if the request is authorized, returns `false` otherwise. Uses Basic http authentication and bcrypt for password hashing.
-fn check_auth<B>(
-    request: &axum::http::Request<B>,
-    admin_password_hash: &'static SecretString,
-) -> bool {
-    let credentials: BasicCredentials =
-        if let Some(auth_header) = request.headers().get("Authorization") {
-            if let Some(credentials) = parse_auth_header_credentials(auth_header) {
-                credentials
-            } else {
-                return false;
-            }
-        } else {
-            return false;
-        };
-
-    let password_match = bcrypt::verify(
-        credentials.password.expose_secret(),
-        admin_password_hash.expose_secret(),
-    )
-    .unwrap_or(false);
-    credentials.username == "admin" && password_match
-}
-
-/// Implementation for serving logs.
-///
-/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
-async fn serve_logs_impl(options: &'static Options, admin_password_hash: &'static SecretString) {
-    let log_dir_1 = options.log_dir();
-    let log_dir_2 = options.log_dir();
-
-    // build our application with a route
-    let app = Router::new()
-        .route(
-            "/log/",
-            get(move || async move {
-                match serve_logs_index(&log_dir_1).await {
-                    Ok(html) => axum::response::Result::Ok(html),
-                    Err(error) => {
-                        tracing::error!("{:?}", error);
-                        axum::response::Result::Err(StatusCode::INTERNAL_SERVER_ERROR)
-                    }
-                }
-            }),
-        )
-        .route(
-            "/log/:filename",
-            get(move |filename| async move { serve_log(filename, &log_dir_2).await }),
-        )
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(RequireAuthorizationLayer::custom(MyBasicAuth {
-                    admin_password_hash,
-                })),
-        );
-
-    let addr: SocketAddr = if let Ok(var) = std::env::var("LISTEN_ADDR") {
-        var.parse()
-            .expect("Error parsing LISTEN_ADDR environment variable")
-    } else {
-        SocketAddr::from(([127, 0, 0, 1], 3000))
-    };
-
-    tracing::info!("Serving logs at http://{}/log", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
-}
-
 #[derive(Debug, thiserror::Error)]
 enum ServeLogError {
     #[error("Log file not found")]
@@ -484,18 +345,38 @@ async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
     Ok(Html::from(buf.finish()))
 }
 
-#[cfg(test)]
-mod test {
-    use axum::http::HeaderValue;
-    use secrecy::ExposeSecret;
+/// Implementation for serving logs.
+///
+/// + `admin_password_hash` is the `admin` user password hashed using bcrypt.
+pub fn serve_logs(options: &'static Options, admin_password_hash: &'static SecretString) -> Router {
+    let log_dir_1 = options.log_dir();
+    let log_dir_2 = options.log_dir();
 
-    use super::parse_auth_header_credentials;
+    // build our application with a route
+    let router = Router::new()
+        .route(
+            "/",
+            get(move || async move {
+                match serve_logs_index(&log_dir_1).await {
+                    Ok(html) => axum::response::Result::Ok(html),
+                    Err(error) => {
+                        tracing::error!("{:?}", error);
+                        axum::response::Result::Err(StatusCode::INTERNAL_SERVER_ERROR)
+                    }
+                }
+            }),
+        )
+        .route(
+            "/:filename",
+            get(move |filename| async move { serve_log(filename, &log_dir_2).await }),
+        )
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .layer(RequireAuthorizationLayer::custom(MyBasicAuth {
+                    admin_password_hash,
+                })),
+        );
 
-    #[test]
-    fn test_parse_auth_header() {
-        let auth_header: HeaderValue = HeaderValue::from_str("Basic YWRtaW46dGVzdA==").unwrap();
-        let credentials = parse_auth_header_credentials(&auth_header).unwrap();
-        assert_eq!(credentials.username, "admin");
-        assert_eq!(credentials.password.expose_secret(), "test");
-    }
+    router
 }
