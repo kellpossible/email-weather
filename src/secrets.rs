@@ -58,6 +58,13 @@ async fn initialize_client_secret(
 
 async fn initialize_token_cache(secrets_dir: &Path) -> eyre::Result<PathBuf> {
     let token_cache_path = secrets_dir.join("token_cache.json");
+
+    if std::env::var("DELETE_TOKEN_CACHE").is_ok() && token_cache_path.is_file() {
+        tracing::warn!("Deleting existing token cache file: {:?}", token_cache_path);
+        std::fs::remove_file(&token_cache_path)
+            .wrap_err_with(|| format!("Error removing token cache file: {:?}", token_cache_path))?
+    }
+
     match std::env::var("TOKEN_CACHE") {
         Ok(secret) => {
             tracing::debug!("Reading token cache from TOKEN_CACHE environment variable.");
@@ -156,7 +163,9 @@ impl ImapSecrets {
     ///   set, then the cache will be initialized automatically using the interactive Installed
     ///   OAUTH2 flow.
     /// + If `OVERWRITE_TOKEN_CACHE` environment variable is set, and `TOKEN_CACHE` is also set,
-    ///   then the
+    ///   then the existing token cache file is overwritten with the contents of `TOKEN_CACHE`.
+    /// + If `DELETE_TOKEN_CACHE` environment variable is set, then the existing token cache file
+    ///   is deleted.
     /// + `secrets_dir` needs to exist and have read/write permissions for this application.
     pub async fn initialize(secrets_dir: &Path) -> eyre::Result<Self> {
         if !secrets_dir.is_dir() {

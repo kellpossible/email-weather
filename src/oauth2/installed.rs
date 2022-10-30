@@ -10,7 +10,7 @@ use oauth2::{
 
 use super::{
     authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
-    ConsentRedirect, StandardTokenResponse,
+    ConsentRedirect, StandardTokenResponse, TokenCache,
 };
 
 /// Used for the "installed" authentication flow.
@@ -51,6 +51,16 @@ impl InstalledFlow {
         let (auth_url, csrf_state) = self
             .client
             .authorize_url(CsrfToken::new_random)
+            // access_type Indicates whether your application can refresh access tokens when the user is not
+            // present at the browser. Valid parameter values are online, which is the default
+            // value, and offline.
+            //
+            // Set the value to offline if your application needs to refresh access tokens when the
+            // user is not present at the browser. This is the method of refreshing access tokens
+            // described later in this document. This value instructs the Google authorization
+            // server to return a refresh token and an access token the first time that your
+            // application exchanges an authorization code for tokens.
+            .add_extra_param("access_type", "offline")
             .add_scopes(scopes)
             .set_pkce_challenge(pkce_challenge)
             // Out of band copy/paste code
@@ -126,6 +136,22 @@ impl InstalledFlow {
 #[async_trait]
 impl AuthenticationFlow for InstalledFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
+        let token_cache = TokenCache::read(&self.token_cache_path)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Error reading token cache from file {:?}",
+                    self.token_cache_path
+                )
+            })?;
+        if token_cache.response.refresh_token().is_none() {
+            if let Some(expires_in) = token_cache.expires_in_now() {
+                tracing::warn!(
+                    "No refresh token available, current token expires after: {}",
+                    expires_in
+                );
+            }
+        }
         authenticate_with_token_cache(
             self.scopes.clone(),
             &self.token_cache_path,

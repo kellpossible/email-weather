@@ -10,6 +10,8 @@ SECRETS_DIR = "/data-volume/secrets"
 DATA_DIR = "/data-volume"
 LISTEN_ADDR = "[::]:8080"
 # OVERWRITE_TOKEN_CACHE = "true"
+# DELETE_TOKEN_CACHE = "true"
+BASE_URL = "https://email-weather.fly.dev/"
 
 [mounts]
 source = "email_weather_data"

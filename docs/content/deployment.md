@@ -26,8 +26,8 @@ You will also need to set up OAUTH2:
 
 Further Reading:
 
-+ https://developers.google.com/gmail/imap/xoauth2-protocol
-+ https://developers.google.com/identity/protocols/oauth2
++ <https://developers.google.com/gmail/imap/xoauth2-protocol>
++ <https://developers.google.com/identity/protocols/oauth2>
 
 
 ## Secrets
@@ -52,4 +52,9 @@ Beware, the `$` signs may mess with your shell, and require escaping, or the use
 
 ## Environment Variables
 
+### `BASE_URL`
+
 ### `OVERWRITE_TOKEN_CACHE`
+
+### `DELETE_TOKEN_CACHE`
+

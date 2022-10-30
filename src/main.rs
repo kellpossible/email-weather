@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use email_weather::{
     fs,
     oauth2::RedirectParameters,
+    options,
     process::process_emails,
     receive::receive_emails,
     reply::send_replies,
@@ -32,6 +33,21 @@ async fn main() -> eyre::Result<()> {
     }));
 
     let _reporting_guard = setup(reporting_options)?;
+
+    let options = Box::leak(Box::new(options::Options::initialize()?));
+
+    let secrets_dir = std::env::var("SECRETS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("secrets"));
+
+    fs::create_dir_if_not_exists(&secrets_dir)
+        .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
+
+    let secrets = Box::leak(Box::new(
+        Secrets::initialize(&secrets_dir)
+            .await
+            .wrap_err("Error while initializing secrets")?,
+    ));
 
     let http_client = reqwest::Client::new();
 
@@ -66,13 +82,6 @@ async fn main() -> eyre::Result<()> {
             .expect("failed to send shutdown broadcast");
     });
 
-    let secrets_dir = std::env::var("SECRETS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("secrets"));
-
-    fs::create_dir_if_not_exists(&secrets_dir)
-        .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
-
     let process_queue_path = data_dir.join("process");
     let reply_queue_path = data_dir.join("reply");
     let (process_sender, process_receiver) = yaque::channel(&process_queue_path)
@@ -80,17 +89,12 @@ async fn main() -> eyre::Result<()> {
     let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
         .wrap_err_with(|| format!("Unable to create reply queue at {:?}", reply_queue_path))?;
 
-    let secrets = Box::leak(Box::new(
-        Secrets::initialize(&secrets_dir)
-            .await
-            .wrap_err("Error while initializing secrets")?,
-    ));
-
     let receive_join = tokio::spawn(receive_emails(
         process_sender,
         emails_receive_shutdown_rx,
         oauth_redirect_rx,
         &secrets.imap_secrets,
+        &options.base_url,
     ));
     let process_join = tokio::spawn(process_emails(
         process_receiver,

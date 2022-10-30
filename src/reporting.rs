@@ -337,7 +337,7 @@ async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
             .ok_or_else(|| eyre::eyre!("Expected path to have a filename"))?
             .to_str()
             .ok_or_else(|| eyre::eyre!("Unable to convert filename to utf-8 string"))?;
-        let href_attr = format!(r#"href="/log/{}""#, filename);
+        let href_attr = format!(r#"href="/logs/{}""#, filename);
         let mut a = li.a().attr(&href_attr);
         write!(a, "{}", filename)?;
     }
