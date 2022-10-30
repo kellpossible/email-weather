@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use crate::{inreach, task::run_retry_log_errors};
 
 /// A reply to an inreach device.
-#[derive(PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub struct InReach {
     /// The url used to send the reply via the web interface (that was supplied in the original
     /// message from the device).
@@ -19,7 +19,7 @@ pub struct InReach {
 }
 
 /// A reply message.
-#[derive(PartialEq, Serialize, Deserialize, Debug)]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub enum Reply {
     /// Reply to an inreach device.
     InReach(InReach),

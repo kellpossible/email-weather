@@ -34,9 +34,7 @@ async fn initialize_client_secret(
             let secret_path = secrets_dir.join("client_secret.json");
             tracing::debug!("Reading client secret from file {:?}", &secret_path);
 
-            if !secret_path.exists() {
-                None
-            } else {
+            if secret_path.exists() {
                 Some(
                     {
                         let client_secret = tokio::fs::read_to_string(&secret_path).await?;
@@ -47,6 +45,8 @@ async fn initialize_client_secret(
                         format!("Error reading oauth2 secret from file {:?}", secret_path)
                     })?,
                 )
+            } else {
+                None
             }
         }
         Err(unexpected) => {
@@ -61,8 +61,9 @@ async fn initialize_token_cache(secrets_dir: &Path) -> eyre::Result<PathBuf> {
 
     if std::env::var("DELETE_TOKEN_CACHE").is_ok() && token_cache_path.is_file() {
         tracing::warn!("Deleting existing token cache file: {:?}", token_cache_path);
-        std::fs::remove_file(&token_cache_path)
-            .wrap_err_with(|| format!("Error removing token cache file: {:?}", token_cache_path))?
+        tokio::fs::remove_file(&token_cache_path)
+            .await
+            .wrap_err_with(|| format!("Error removing token cache file: {:?}", token_cache_path))?;
     }
 
     match std::env::var("TOKEN_CACHE") {
@@ -88,9 +89,11 @@ async fn initialize_token_cache(secrets_dir: &Path) -> eyre::Result<PathBuf> {
                 } else {
                     tracing::info!("Writing to new token cache file {:?}", token_cache_path);
                 }
-                std::fs::write(&token_cache_path, &secret).wrap_err_with(|| {
-                    format!("Error writing token cache file: {:?}", token_cache_path)
-                })?;
+                tokio::fs::write(&token_cache_path, &secret)
+                    .await
+                    .wrap_err_with(|| {
+                        format!("Error writing token cache file: {:?}", token_cache_path)
+                    })?;
             }
         }
         Err(std::env::VarError::NotPresent) => {
@@ -130,9 +133,7 @@ async fn initialize_service_account_key(
             let secret_path = secrets_dir.join("service_account_key.json");
             tracing::debug!("Reading service account key from file {:?}", &secret_path);
 
-            if !secret_path.exists() {
-                None
-            } else {
+            if secret_path.exists() {
                 Some(
                     {
                         let service_account_key = tokio::fs::read_to_string(&secret_path).await?;
@@ -143,6 +144,8 @@ async fn initialize_service_account_key(
                         format!("Error reading oauth2 secret from file {:?}", secret_path)
                     })?,
                 )
+            } else {
+                None
             }
         }
         Err(unexpected) => {
@@ -201,7 +204,7 @@ pub struct Secrets {
 }
 
 impl Secrets {
-    /// In addition to the secrets loaded by [ImapSecrets], there are the following:
+    /// In addition to the secrets loaded by [`ImapSecrets`], there are the following:
     ///
     /// + `ADMIN_PASSWORD_HASH`: A `bcrypt` hash of the administrator password used to access the
     ///   application logs.

@@ -52,7 +52,7 @@ struct ReportWriterOptions {
     log_file: Option<LogFileOptions>,
 }
 
-/// Implements [std::io::Write] to write `tracing`/panic messages to
+/// Implements [`std::io::Write`] to write `tracing`/panic messages to
 /// multiple outputs.
 struct ReportWriter {
     stdout: bool,
@@ -61,7 +61,7 @@ struct ReportWriter {
 }
 
 impl ReportWriter {
-    /// Try creating a new [TracingWriter].
+    /// Try creating a new [`TracingWriter`].
     fn try_new(options: &ReportWriterOptions) -> eyre::Result<Self> {
         let log_file_writer = if let Some(log_file_options) = &options.log_file {
             if !log_file_options.directory.exists() {
@@ -129,7 +129,7 @@ impl std::io::Write for ReportWriter {
 impl Drop for ReportWriter {
     fn drop(&mut self) {
         use std::io::Write;
-        let _ = self.write("\n".as_bytes());
+        drop(self.write("\n".as_bytes()));
     }
 }
 
@@ -353,7 +353,7 @@ pub fn serve_logs(options: &'static Options, admin_password_hash: &'static Secre
     let log_dir_2 = options.log_dir();
 
     // build our application with a route
-    let router = Router::new()
+    Router::new()
         .route(
             "/",
             get(move || async move {
@@ -376,7 +376,5 @@ pub fn serve_logs(options: &'static Options, admin_password_hash: &'static Secre
                 .layer(RequireAuthorizationLayer::custom(MyBasicAuth {
                     admin_password_hash,
                 })),
-        );
-
-    router
+        )
 }

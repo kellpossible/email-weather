@@ -50,7 +50,7 @@ impl<B> AuthorizeRequest<B> for MyBasicAuth {
         &mut self,
         request: &mut axum::http::Request<B>,
     ) -> Result<(), axum::http::Response<Self::ResponseBody>> {
-        if check_auth(request, &self.admin_password_hash) {
+        if check_auth(request, self.admin_password_hash) {
             Ok(())
         } else {
             let unauthorized_response = axum::http::Response::builder()
@@ -124,7 +124,7 @@ async fn serve_http_impl(options: Options) {
         tracing::info!("Serving logs at http://{}/logs", addr);
         app.nest(
             "/logs/",
-            reporting::serve_logs(&options.reporting, admin_password_hash),
+            reporting::serve_logs(options.reporting, admin_password_hash),
         )
     } else {
         tracing::info!("No admin password secret provided, logs will not be served");

@@ -299,7 +299,7 @@ async fn receive_emails_impl(
                     );
                     continue;
                 }
-                _ => {
+                PollEmailsError::Unexpected(_) => {
                     return Err(error
                         .into_eyre()
                         .wrap_err("Unexpected error while polling email inbox"))
@@ -342,5 +342,5 @@ pub async fn receive_emails(
         },
         shutdown_rx,
     )
-    .await
+    .await;
 }
