@@ -7,6 +7,7 @@
 pub mod fs;
 pub mod inreach;
 pub mod oauth2;
+pub mod options;
 pub mod process;
 pub mod receive;
 pub mod reply;

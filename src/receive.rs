@@ -240,6 +240,7 @@ async fn receive_emails_impl(
     process_sender: Arc<Mutex<yaque::Sender>>,
     imap_secrets: &ImapSecrets,
     oauth_redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
+    oauth2_redirect_url: RedirectUrl,
 ) -> eyre::Result<()> {
     loop {
         tracing::debug!("Starting receiving emails job");
@@ -265,7 +266,7 @@ async fn receive_emails_impl(
         let flow = crate::oauth2::InstalledFlow::new(
             ConsentRedirect::Http {
                 redirect_rx: oauth_redirect_rx.clone(),
-                // url: RedirectUrl::new("https://email-weather.fly.dev/oauth2".to_string())?
+                // TODO: use Options::base_url to construct this.
                 url: RedirectUrl::new("http://localhost:3000/oauth2".to_string())?
             },
             imap_secrets

@@ -135,7 +135,6 @@ async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<Standar
     }
 }
 
-
 /// A flow for authenticating with a Google service account.
 pub struct ServiceAccountFlow {
     key: Key,

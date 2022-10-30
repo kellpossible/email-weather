@@ -5,6 +5,7 @@ use color_eyre::Help;
 use eyre::Context;
 use oauth2::{
     basic::BasicClient, AccessToken, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope,
+    TokenResponse,
 };
 
 use super::{
@@ -42,6 +43,8 @@ impl InstalledFlow {
             token_cache_path,
         }
     }
+
+    #[tracing::instrument(skip(self, scopes))]
     async fn obtain_new_token(&self, scopes: Vec<Scope>) -> eyre::Result<StandardTokenResponse> {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let redirect_uri = self.redirect.redirect_url();
@@ -80,7 +83,8 @@ impl InstalledFlow {
             }
         };
 
-        self.client
+        let token_response = self
+            .client
             .exchange_code(code)
             .set_pkce_verifier(pkce_verifier)
             .set_redirect_uri(Cow::Borrowed(&redirect_uri))
@@ -98,7 +102,24 @@ impl InstalledFlow {
                 }
                 _ => eyre::Error::from(error),
             })
-            .wrap_err("Error exchanging authentication code")
+            .wrap_err("Error exchanging authentication code")?;
+
+        if token_response.refresh_token().is_none() {
+            let expire_message: String = if let Some(expires_in) = token_response.expires_in() {
+                format!(
+                    "Current token will expire after {}",
+                    humantime::format_duration(expires_in)
+                )
+            } else {
+                "Current token will never expire".to_string()
+            };
+            tracing::warn!(
+                "No refresh token provided with token response. {}.",
+                expire_message
+            );
+        }
+
+        Ok(token_response)
     }
 }
 

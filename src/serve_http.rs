@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret, SecretString};
 use tokio::sync::mpsc;
 use tower_http::auth::AuthorizeRequest;
 
-use crate::{reporting, oauth2::RedirectParameters};
+use crate::{oauth2::RedirectParameters, reporting};
 
 /// Options for running this application's http server.
 pub struct Options {
