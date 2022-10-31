@@ -1,11 +1,11 @@
 //! See [`receive_emails()`].
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, str::FromStr, sync::Arc};
 
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use oauth2::{AccessToken, AuthorizationCode, RedirectUrl};
+use oauth2::{AccessToken, RedirectUrl};
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -14,16 +14,57 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
+    gis::Position,
     inreach,
     oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
+    plain,
     secrets::ImapSecrets,
     task::run_retry_log_errors,
     time,
 };
 
+pub trait Email {
+    /// Position (latitude, longitude).
+    fn position(&self) -> Position;
+}
+
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Email {
+pub enum EmailKind {
     Inreach(inreach::email::Email),
+    Plain(plain::email::Email),
+}
+
+impl EmailKind {
+    fn parse(from_address: mail_parser::Addr, body: &str) -> eyre::Result<Option<EmailKind>> {
+        let from_address = if let Some(from_address) = from_address.address {
+            from_address
+        } else {
+            return Ok(None);
+        };
+
+        let email = match from_address.as_ref() {
+            "no.reply.inreach@garmin.com" => Self::Inreach(inreach::email::Email::from_str(body)?),
+            "l.frisken@gmail.com" => todo!(),
+            _ => {
+                tracing::warn!(
+                    "Skipping processing message because it is not from a whitelisted address: {}",
+                    from_address
+                );
+                return Ok(None);
+            }
+        };
+
+        Ok(Some(email))
+    }
+}
+
+impl Email for EmailKind {
+    fn position(&self) -> Position {
+        match self {
+            EmailKind::Inreach(email) => email.position(),
+            EmailKind::Plain(email) => email.position(),
+        }
+    }
 }
 
 struct GmailOAuth2 {
@@ -197,7 +238,7 @@ where
 
                         tracing::debug!("text_body: {}", text_body);
 
-                        let email: Email = Email::Inreach(text_body.parse().wrap_err("Unable to parse text body as a valid inreach email")?);
+                        let email: EmailKind = EmailKind::Inreach(text_body.parse().wrap_err("Unable to parse text body as a valid inreach email")?);
                         let email_data = serde_json::to_vec(&email).wrap_err("Error serializing email data to json bytes")?;
 
                         let mut sender = emails_sender.lock().await;

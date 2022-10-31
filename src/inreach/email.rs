@@ -6,17 +6,24 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use crate::{gis::Position, receive};
+
 /// An email received from an inreach device.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Email {
     /// The name of the person who sent the message.
+    /// TODO: remove as part of anonymizing #12
     pub from_name: String,
     /// The url used to send a reply to the message via the inreach web interface.
     pub referral_url: url::Url,
-    /// Latitude in degrees of inreach device when it sent the message.
-    pub latitude: f32,
-    /// Longitude in degrees of inreach device when it sent the message.
-    pub longitude: f32,
+    /// The position of the inreach device at the time that the message was sent.
+    pub position: Position,
+}
+
+impl receive::Email for Email {
+    fn position(&self) -> Position {
+        todo!()
+    }
 }
 
 static VIEW_LOCATION_RE: Lazy<Regex> =
