@@ -9,7 +9,7 @@ use email_weather::{
     reply::send_replies,
     reporting::{self, setup},
     secrets::Secrets,
-    serve_http,
+    serve_http, time,
 };
 use eyre::Context;
 use tokio::{
@@ -42,6 +42,8 @@ async fn main() -> eyre::Result<()> {
 
     fs::create_dir_if_not_exists(&secrets_dir)
         .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
+
+    let time: &'static dyn time::Port = Box::leak(Box::new(time::Gateway));
 
     let secrets = Box::leak(Box::new(
         Secrets::initialize(&secrets_dir)
@@ -95,17 +97,20 @@ async fn main() -> eyre::Result<()> {
         oauth_redirect_rx,
         &secrets.imap_secrets,
         &options.base_url,
+        time,
     ));
     let process_join = tokio::spawn(process_emails(
         process_receiver,
         reply_sender,
         emails_process_shutdown_rx,
         http_client.clone(),
+        time,
     ));
     let reply_join = tokio::spawn(send_replies(
         reply_receiver,
         send_replies_shutdown_rx,
         http_client,
+        time,
     ));
 
     let serve_http_options = serve_http::Options {

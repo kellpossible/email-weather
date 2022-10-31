@@ -6,7 +6,7 @@ use eyre::Context;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::{inreach, task::run_retry_log_errors};
+use crate::{inreach, retry::ExponentialBackoff, task::run_retry_log_errors, time};
 
 /// A reply to an inreach device.
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -45,22 +45,24 @@ const RETRY_ATTEMPTS: usize = 5;
 async fn send_replies_impl(
     reply_receiver: &mut yaque::Receiver,
     http_client: reqwest::Client,
+    time: &dyn time::Port,
 ) -> eyre::Result<()> {
     loop {
         let reply_bytes = reply_receiver.recv().await?;
         let reply: Reply =
             serde_json::from_slice(&*reply_bytes).wrap_err("Failed to deserialize reply")?;
 
-        let mut retry_count: usize = 0;
+        let mut backoff =
+            ExponentialBackoff::new(Duration::from_secs(5), Duration::from_secs(60 * 10))
+                .expect("Invalid backoff");
         'retry: loop {
             match send_reply(&reply, &http_client).await {
                 Ok(_) => break 'retry,
                 Err(error) => {
                     tracing::error!("{:?}", error);
-                    if retry_count < RETRY_ATTEMPTS {
-                        tokio::time::sleep(Duration::from_secs(10)).await;
-                        retry_count += 1;
-                        tracing::warn!("Retrying {}/{}...", retry_count, RETRY_ATTEMPTS);
+                    if backoff.iteration() < RETRY_ATTEMPTS {
+                        backoff.sleep(time).await;
+                        tracing::warn!("Retrying {}/{}...", backoff.iteration(), RETRY_ATTEMPTS);
                         continue;
                     } else {
                         let reply_json = serde_json::to_string(&reply)?;
@@ -76,11 +78,12 @@ async fn send_replies_impl(
 
 /// This function spawns a task to send replies to received emails using the results of
 /// [`crate::processing`].
-#[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client))]
+#[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client, time))]
 pub async fn send_replies(
     reply_receiver: yaque::Receiver,
     shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
+    time: &dyn time::Port,
 ) {
     let reply_receiver = Arc::new(Mutex::new(reply_receiver));
     tracing::debug!("Starting send replies job");
@@ -90,10 +93,11 @@ pub async fn send_replies(
             let reply_receiver = reply_receiver.clone();
             async move {
                 let mut reply_receiver = reply_receiver.lock().await;
-                send_replies_impl(&mut reply_receiver, http_client.clone()).await
+                send_replies_impl(&mut reply_receiver, http_client.clone(), time).await
             }
         },
         shutdown_rx,
+        time,
     )
     .await;
 }

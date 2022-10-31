@@ -54,8 +54,10 @@ open-meteo = { path = "open-meteo" }
 native-tls = { version = "0.2", features = ["vendored"] } # use vendored for MUSL compilation
 
 [dev-dependencies]
+mockall = "0.11"
 wiremock = "0.5"
 insta = { version = "1.21", features = ["json"] }
+approx = "0.5"
 
 [workspace]
 members = ["open-meteo", "open-topo-data", "admin-password-hash"]

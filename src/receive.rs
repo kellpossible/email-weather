@@ -18,6 +18,7 @@ use crate::{
     oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
     secrets::ImapSecrets,
     task::run_retry_log_errors,
+    time,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -226,13 +227,14 @@ where
 async fn receive_emails_poll_inbox_loop<T>(
     process_sender: Arc<Mutex<yaque::Sender>>,
     imap_session: &mut async_imap::Session<T>,
+    time: &dyn time::Port,
 ) -> Result<(), PollEmailsError>
 where
     T: AsyncRead + AsyncWrite + Unpin + Send + std::fmt::Debug,
 {
     loop {
         receive_emails_poll_inbox(process_sender.clone(), imap_session).await?;
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        time.async_sleep(std::time::Duration::from_secs(10)).await;
     }
 }
 
@@ -241,6 +243,7 @@ async fn receive_emails_impl(
     imap_secrets: &ImapSecrets,
     oauth_redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
     base_url: &url::Url,
+    time: &dyn time::Port,
 ) -> eyre::Result<()> {
     loop {
         tracing::debug!("Starting receiving emails job");
@@ -289,7 +292,8 @@ async fn receive_emails_impl(
         // let mut imap_session = imap_client.login(imap_username, imap_password).await.map_err(|error| error.0)?;
         tracing::info!("Successful IMAP session login");
 
-        match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session).await {
+        match receive_emails_poll_inbox_loop(process_sender.clone(), &mut imap_session, time).await
+        {
             Ok(_) => {}
             Err(error) => match error {
                 PollEmailsError::Connection { .. } => {
@@ -321,7 +325,8 @@ async fn receive_emails_impl(
     shutdown_rx,
     oauth_redirect_rx,
     imap_secrets,
-    base_url
+    base_url,
+    time,
 ))]
 pub async fn receive_emails(
     process_sender: yaque::Sender,
@@ -329,6 +334,7 @@ pub async fn receive_emails(
     oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
     imap_secrets: &ImapSecrets,
     base_url: &url::Url,
+    time: &dyn time::Port,
 ) {
     let process_sender = Arc::new(Mutex::new(process_sender));
     let oauth_redirect_rx = Arc::new(Mutex::new(oauth_redirect_rx));
@@ -337,10 +343,18 @@ pub async fn receive_emails(
             let process_sender = process_sender.clone();
             let oauth_redirect_rx = oauth_redirect_rx.clone();
             async move {
-                receive_emails_impl(process_sender, imap_secrets, oauth_redirect_rx, base_url).await
+                receive_emails_impl(
+                    process_sender,
+                    imap_secrets,
+                    oauth_redirect_rx,
+                    base_url,
+                    time,
+                )
+                .await
             }
         },
         shutdown_rx,
+        time,
     )
     .await;
 }

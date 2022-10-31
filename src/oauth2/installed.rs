@@ -136,20 +136,22 @@ impl InstalledFlow {
 #[async_trait]
 impl AuthenticationFlow for InstalledFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
-        let token_cache = TokenCache::read(&self.token_cache_path)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "Error reading token cache from file {:?}",
-                    self.token_cache_path
-                )
-            })?;
-        if token_cache.response.refresh_token().is_none() {
-            if let Some(expires_in) = token_cache.expires_in_now() {
-                tracing::warn!(
-                    "No refresh token available, current token expires after: {}",
-                    expires_in
-                );
+        if self.token_cache_path.exists() {
+            let token_cache = TokenCache::read(&self.token_cache_path)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Error reading token cache from file {:?}",
+                        self.token_cache_path
+                    )
+                })?;
+            if token_cache.response.refresh_token().is_none() {
+                if let Some(expires_in) = token_cache.expires_in_now() {
+                    tracing::warn!(
+                        "No refresh token available, current token expires after: {}",
+                        expires_in
+                    );
+                }
             }
         }
         authenticate_with_token_cache(

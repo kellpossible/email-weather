@@ -270,9 +270,15 @@ where
     };
 
     if let Some(expires_in) = token_cache.expires_in_now() {
+        let refresh_message = if token_cache.response.refresh_token().is_some() {
+            "It can be refreshed using the cached refresh token."
+        } else {
+            "It cannot be refreshed, the cache does not contain a refresh token, a new token will be need obtained upon expire."
+        };
         tracing::debug!(
-            "Token expires in: {}",
-            humantime::format_duration(expires_in.to_std()?)
+            "Token expires in: {}. {}",
+            humantime::format_duration(expires_in.to_std()?),
+            refresh_message,
         );
     } else {
         tracing::warn!("Token has no expiration time")

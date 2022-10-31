@@ -11,6 +11,7 @@ use crate::{
     receive::Email,
     reply::{InReach, Reply},
     task::run_retry_log_errors,
+    time,
 };
 
 #[derive(PartialEq, Debug)]
@@ -237,12 +238,13 @@ async fn process_emails_impl(
 
 /// This function spawns a task to process an incoming email, create a customized forecast that it
 /// requested, and dispatch a reply.
-#[tracing::instrument(skip(process_receiver, reply_sender, shutdown_rx, http_client))]
+#[tracing::instrument(skip(process_receiver, reply_sender, shutdown_rx, http_client, time))]
 pub async fn process_emails(
     process_receiver: yaque::Receiver,
     reply_sender: yaque::Sender,
     shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
+    time: &dyn time::Port,
 ) {
     tracing::debug!("Starting processing emails job");
     let queues = Arc::new(Mutex::new((process_receiver, reply_sender)));
@@ -256,6 +258,7 @@ pub async fn process_emails(
             }
         },
         shutdown_rx,
+        time,
     )
     .await;
 }
