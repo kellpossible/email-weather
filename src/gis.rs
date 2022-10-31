@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 /// Position
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Position<CRS = WGS84> {
+    /// Latitude of the position (in degrees).
     pub latitude: f32,
+    /// Longitude of the position (in degrees).
     pub longitude: f32,
     coordinate_reference_system: PhantomData<CRS>,
 }
@@ -24,5 +26,5 @@ impl<CRS> Position<CRS> {
 }
 
 /// WGS84 Coordinate system.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct WGS84;

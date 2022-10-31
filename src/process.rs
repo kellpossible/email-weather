@@ -8,7 +8,7 @@ use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone,
 use tokio::sync::Mutex;
 
 use crate::{
-    receive::Email,
+    receive::{Email, EmailKind},
     reply::{InReach, Reply},
     task::run_retry_log_errors,
     time,
@@ -82,15 +82,12 @@ async fn process_emails_impl(
 ) -> eyre::Result<()> {
     loop {
         let received = process_receiver.recv().await?;
-        let received_email: Email = serde_json::from_slice(&*received)?;
+        let received_email: EmailKind = serde_json::from_slice(&*received)?;
 
-        let (latitude, longitude): (f32, f32) = match &received_email {
-            Email::Inreach(email) => (email.latitude, email.longitude),
-        };
-
+        let position = received_email.position();
         let forecast_parameters = ForecastParameters::builder()
-            .latitude(latitude)
-            .longitude(longitude)
+            .latitude(position.latitude)
+            .longitude(position.longitude)
             .hourly_entry(HourlyVariable::FreezingLevelHeight)
             .hourly_entry(HourlyVariable::WindSpeed10m)
             .hourly_entry(HourlyVariable::WindDirection10m)
@@ -223,10 +220,11 @@ async fn process_emails_impl(
         tracing::info!("message (len: {}):\n{}", message.len(), message);
 
         let reply = match received_email {
-            Email::Inreach(email) => Reply::InReach(InReach {
+            EmailKind::Inreach(email) => Reply::InReach(InReach {
                 referral_url: email.referral_url,
                 message,
             }),
+            EmailKind::Plain(_) => todo!(),
         };
 
         let reply_bytes = serde_json::to_vec(&reply).wrap_err("Failed to serialize reply")?;

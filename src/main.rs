@@ -43,7 +43,7 @@ async fn main() -> eyre::Result<()> {
     fs::create_dir_if_not_exists(&secrets_dir)
         .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
 
-    let time: &'static dyn time::Port = Box::leak(Box::new(time::Gateway));
+    let time: &'static time::Gateway = Box::leak(Box::new(time::Gateway));
 
     let secrets = Box::leak(Box::new(
         Secrets::initialize(&secrets_dir)

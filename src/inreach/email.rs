@@ -99,8 +99,7 @@ impl FromStr for Email {
         Ok(Self {
             from_name: from_name.unwrap(),
             referral_url: referral_url.unwrap(),
-            latitude: latitude.unwrap(),
-            longitude: longitude.unwrap(),
+            position: Position::new(latitude.unwrap(), longitude.unwrap()),
         })
     }
 }
