@@ -15,6 +15,8 @@ pub struct ImapSecrets {
     pub token_cache_path: PathBuf,
     /// OAUTH2 Installed client secret.
     pub client_secret: Option<ClientSecretDefinition>,
+    /// Private key used for accessing IMAP via OAUTH2 with a service account.
+    /// **Note**: Currently unused.
     pub service_account_key: Option<service_account::Key>,
 }
 

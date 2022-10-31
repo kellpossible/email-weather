@@ -130,7 +130,7 @@ learn more, visit http://explore.garmin.com/inreach.
             "https://aus.explore.garmin.com/textmessage/txtmsg?extId=000aa0e6-8e00-2501-000d-3aa730600000&adr=email.weather.service%40gmail.com",
             email.referral_url.as_str()
         );
-        assert_eq!(-44.689529, email.latitude);
-        assert_eq!(169.132354, email.longitude);
+        assert_eq!(-44.689529, email.position.latitude);
+        assert_eq!(169.132354, email.position.longitude);
     }
 }

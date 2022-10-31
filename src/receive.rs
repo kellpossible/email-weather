@@ -23,18 +23,24 @@ use crate::{
     time,
 };
 
+/// An email received via IMAP.
 pub trait Email {
     /// Position (latitude, longitude).
     fn position(&self) -> Position;
 }
 
+/// Sum type of all possible [`Email`]s that can be received and parsed via IMAP.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum EmailKind {
+    /// Email received from an inreach device.
     Inreach(inreach::email::Email),
+    /// Plain text email.
     Plain(plain::email::Email),
 }
 
 impl EmailKind {
+    /// Parses an email into [`EmailKind`]. Returns `None` if the email will deliberately not be
+    /// parsed (e.g. not on the whitelist of `from_address`).
     fn parse(from_address: mail_parser::Addr, body: &str) -> eyre::Result<Option<EmailKind>> {
         let from_address = if let Some(from_address) = from_address.address {
             from_address
@@ -44,7 +50,7 @@ impl EmailKind {
 
         let email = match from_address.as_ref() {
             "no.reply.inreach@garmin.com" => Self::Inreach(inreach::email::Email::from_str(body)?),
-            "l.frisken@gmail.com" => todo!(),
+            "l.frisken@gmail.com" => Self::Plain(plain::email::Email::from_str(body)?),
             _ => {
                 tracing::warn!(
                     "Skipping processing message because it is not from a whitelisted address: {}",

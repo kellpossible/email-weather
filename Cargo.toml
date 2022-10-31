@@ -14,11 +14,10 @@ oauth2 = "4.2"
 axum = "0.5"
 base64 = "0.13"
 bcrypt = "0.13"
-mail-parser = "0.6"
+mail-parser = "0.7"
 color-eyre = "0.6"
-grib = { git = "https://github.com/noritada/grib-rs.git" }
 chrono = "0.4"
-chrono-tz = "0.6"
+chrono-tz = "0.6" # Sticking with 0.6 until https://github.com/chronotope/chrono-tz/issues/114 is resolved.
 jsonwebtoken = "8.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["fs"] }
