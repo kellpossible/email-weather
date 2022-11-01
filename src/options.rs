@@ -5,10 +5,11 @@ use std::{
 
 use color_eyre::Help;
 use eyre::Context;
-use serde::Deserialize;
+use ron::ser::PrettyConfig;
+use serde::{Deserialize, Serialize};
 
 /// An email account address/username e.g. `my.email@example.com`.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EmailAccount(String);
 
@@ -25,7 +26,7 @@ impl Display for EmailAccount {
 }
 
 /// Global options for the application.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Options {
     /// Directory where application data is stored (including logs).
     ///
@@ -86,16 +87,21 @@ impl Options {
     /// that path, if `OPTIONS` contains a RON file definition then it will load the options from
     /// the string contained in the variable.
     pub async fn initialize() -> eyre::Result<Self> {
-        match std::env::var("OPTIONS") {
+        let options_result = match std::env::var("OPTIONS") {
             Ok(options) => match ron::from_str(&options) {
-                Ok(options) => Ok(options),
+                Ok(options) => {
+                    println!("Options loaded from `OPTIONS` environment variable");
+                    Ok(options)
+                }
                 Err(error) => {
                     let path = PathBuf::from(options);
                     if path.is_file() {
                         let options_str = tokio::fs::read_to_string(&path).await?;
-                        ron::from_str(&options_str).wrap_err_with(|| {
+                        let options: Options = ron::from_str(&options_str).wrap_err_with(|| {
                             format!("Error deserializing options file: {:?}", path)
-                        })
+                        })?;
+                        println!("Options loaded from file specified in `OPTIONS` environment variable: {:?}", path);
+                        Ok(options)
                     } else {
                         Err(error).wrap_err(
                             "Error deserializing options from `OPTIONS` environment variable \
@@ -119,12 +125,22 @@ impl Options {
                     ));
                 }
                 let options_str = tokio::fs::read_to_string(&path).await?;
-                ron::from_str(&options_str)
-                    .wrap_err_with(|| format!("Error deserializing options file: {:?}", path))
+                let options = ron::from_str(&options_str)
+                    .wrap_err_with(|| format!("Error deserializing options file: {:?}", path));
+
+                println!("Options loaded from default file: {:?}", path);
+                options
             }
             Err(error) => {
                 return Err(error).wrap_err("Error reading `OPTIONS` environment variable")
             }
+        };
+
+        if let Ok(options) = &options_result {
+            let options_str = ron::ser::to_string_pretty(options, PrettyConfig::default())?;
+            println!("Options{}", options_str)
         }
+
+        options_result
     }
 }
