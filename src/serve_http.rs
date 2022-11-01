@@ -17,6 +17,8 @@ pub struct Options {
     pub admin_password_hash: Option<&'static SecretString>,
     /// A channel to send authorization codes received.
     pub oauth_redirect_tx: mpsc::Sender<RedirectParameters>,
+    /// Base url used for http server.
+    pub base_url: url::Url,
 }
 
 // TODO: turn this into a generic web server, and provide a channel for transmitting the
@@ -107,7 +109,7 @@ fn check_auth<B>(
     credentials.username == "admin" && password_match
 }
 
-async fn serve_http_impl(options: Options) {
+async fn serve_http_impl(options: Options) -> eyre::Result<()> {
     let app = Router::new().nest(
         "/oauth2/",
         crate::oauth2::redirect_server(options.oauth_redirect_tx),
@@ -121,7 +123,8 @@ async fn serve_http_impl(options: Options) {
     };
 
     let app = if let Some(admin_password_hash) = &options.admin_password_hash {
-        tracing::info!("Serving logs at http://{}/logs", addr);
+        let logs_url = options.base_url.join("logs/")?;
+        tracing::info!("Serving logs at {}", logs_url);
         app.nest(
             "/logs/",
             reporting::serve_logs(options.reporting, admin_password_hash),
@@ -134,5 +137,5 @@ async fn serve_http_impl(options: Options) {
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
-        .unwrap();
+        .wrap_err("Server error")
 }

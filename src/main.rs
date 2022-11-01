@@ -106,6 +106,7 @@ async fn main() -> eyre::Result<()> {
         reporting: reporting_options,
         admin_password_hash: secrets.admin_password_hash.as_ref(),
         oauth_redirect_tx,
+        base_url: options.base_url.clone(),
     };
     let serve_http_join = tokio::spawn(serve_http::serve_http(
         serve_http_shutdown_rx,
