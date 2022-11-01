@@ -149,7 +149,7 @@ impl Options {
     }
 }
 
-pub fn setup(options: &Options) -> eyre::Result<Guard> {
+pub fn setup_logging(options: &Options) -> eyre::Result<Guard> {
     let sentry = if let Ok(sentry_dsn) = std::env::var("SENTRY_DSN") {
         Some(sentry::init(sentry::ClientOptions {
             dsn: Some(
@@ -194,19 +194,7 @@ pub fn setup(options: &Options) -> eyre::Result<Guard> {
         .with(sentry.as_ref().map(|_| sentry_tracing::layer()))
         .init();
 
-    let (eyre_panic_hook, eyre_hook) = color_eyre::config::HookBuilder::new().into_hooks();
-    let eyre_panic_hook = eyre_panic_hook.into_panic_hook();
-    eyre::set_hook(eyre_hook.into_eyre_hook())?;
-
-    let sentry_enabled: bool = sentry.is_some();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        eyre_panic_hook(panic_info);
-        // if sentry_enabled {
-        //     sentry::integrations::panic::panic_handler(panic_info);
-        // }
-    }));
-
-    if sentry_enabled {
+    if sentry.is_some() {
         tracing::info!("sentry.io reporting is enabled");
     }
 
@@ -214,6 +202,17 @@ pub fn setup(options: &Options) -> eyre::Result<Guard> {
         _sentry: sentry,
         _writer: report_writer_guard,
     })
+}
+
+/// Setup panic hooks and [`eyre`] formatting hooks.
+pub fn setup_error_hooks() -> eyre::Result<()> {
+    let (eyre_panic_hook, eyre_hook) = color_eyre::config::HookBuilder::new().into_hooks();
+    let eyre_panic_hook = eyre_panic_hook.into_panic_hook();
+    eyre::set_hook(eyre_hook.into_eyre_hook())?;
+    std::panic::set_hook(Box::new(move |panic_info| {
+        eyre_panic_hook(panic_info);
+    }));
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,15 +1,6 @@
-use std::path::PathBuf;
-
 use email_weather::{
-    fs,
-    oauth2::RedirectParameters,
-    options,
-    process::process_emails,
-    receive::receive_emails,
-    reply::send_replies,
-    reporting::{self, setup},
-    secrets::Secrets,
-    serve_http, time,
+    fs, oauth2::RedirectParameters, options, process::process_emails, receive::receive_emails,
+    reply::send_replies, reporting, secrets::Secrets, serve_http, time,
 };
 use eyre::Context;
 use tokio::{
@@ -20,33 +11,30 @@ use tracing_appender::rolling::Rotation;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let data_dir = std::env::var("DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("data"));
+    reporting::setup_error_hooks()?;
+    let options = Box::leak(Box::new(options::Options::initialize().await?));
 
-    fs::create_dir_if_not_exists(&data_dir)
-        .wrap_err_with(|| format!("Unable to create data directory {:?}", data_dir))?;
+    fs::create_dir_if_not_exists(&options.data_dir)
+        .wrap_err_with(|| format!("Unable to create data directory {:?}", options.data_dir))?;
 
     let reporting_options: &'static reporting::Options = Box::leak(Box::new(reporting::Options {
-        data_dir: data_dir.clone(),
+        data_dir: options.data_dir.clone(),
         log_rotation: Rotation::DAILY,
     }));
 
-    let _reporting_guard = setup(reporting_options)?;
+    let _reporting_guard = reporting::setup_logging(reporting_options)?;
 
-    let options = Box::leak(Box::new(options::Options::initialize()?));
-
-    let secrets_dir = std::env::var("SECRETS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("secrets"));
-
-    fs::create_dir_if_not_exists(&secrets_dir)
-        .wrap_err_with(|| format!("Unable to create secrets directory {:?}", secrets_dir))?;
+    fs::create_dir_if_not_exists(&options.secrets_dir).wrap_err_with(|| {
+        format!(
+            "Unable to create secrets directory {:?}",
+            options.secrets_dir
+        )
+    })?;
 
     let time: &'static time::Gateway = Box::leak(Box::new(time::Gateway));
 
     let secrets = Box::leak(Box::new(
-        Secrets::initialize(&secrets_dir)
+        Secrets::initialize(&options.secrets_dir)
             .await
             .wrap_err("Error while initializing secrets")?,
     ));
@@ -84,8 +72,8 @@ async fn main() -> eyre::Result<()> {
             .expect("failed to send shutdown broadcast");
     });
 
-    let process_queue_path = data_dir.join("process");
-    let reply_queue_path = data_dir.join("reply");
+    let process_queue_path = options.data_dir.join("process");
+    let reply_queue_path = options.data_dir.join("reply");
     let (process_sender, process_receiver) = yaque::channel(&process_queue_path)
         .wrap_err_with(|| format!("Unable to create process queue at {:?}", process_queue_path))?;
     let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
@@ -97,6 +85,7 @@ async fn main() -> eyre::Result<()> {
         oauth_redirect_rx,
         &secrets.imap_secrets,
         &options.base_url,
+        options.email_account.as_ref(),
         time,
     ));
     let process_join = tokio::spawn(process_emails(

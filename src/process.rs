@@ -236,7 +236,7 @@ async fn process_emails_impl(
 
 /// This function spawns a task to process an incoming email, create a customized forecast that it
 /// requested, and dispatch a reply.
-#[tracing::instrument(skip(process_receiver, reply_sender, shutdown_rx, http_client, time))]
+#[tracing::instrument(skip_all)]
 pub async fn process_emails(
     process_receiver: yaque::Receiver,
     reply_sender: yaque::Sender,

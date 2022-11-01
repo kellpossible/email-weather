@@ -78,7 +78,7 @@ async fn send_replies_impl(
 
 /// This function spawns a task to send replies to received emails using the results of
 /// [`crate::processing`].
-#[tracing::instrument(skip(reply_receiver, shutdown_rx, http_client, time))]
+#[tracing::instrument(skip_all)]
 pub async fn send_replies(
     reply_receiver: yaque::Receiver,
     shutdown_rx: tokio::sync::broadcast::Receiver<()>,

@@ -17,6 +17,7 @@ use crate::{
     gis::Position,
     inreach,
     oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
+    options::EmailAccount,
     plain,
     secrets::ImapSecrets,
     task::run_retry_log_errors,
@@ -290,6 +291,7 @@ async fn receive_emails_impl(
     imap_secrets: &ImapSecrets,
     oauth_redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
     base_url: &url::Url,
+    imap_username: &str,
     time: &dyn time::Port,
 ) -> eyre::Result<()> {
     loop {
@@ -297,7 +299,6 @@ async fn receive_emails_impl(
         let tls = async_native_tls::TlsConnector::new();
 
         let imap_domain = "imap.gmail.com";
-        let imap_username = "email.weather.service@gmail.com";
 
         let scopes = vec![
             // https://developers.google.com/gmail/imap/xoauth2-protocol
@@ -367,22 +368,18 @@ async fn receive_emails_impl(
 }
 
 /// This function spawns a task to receive emails via IMAP, and submit them for processing.
-#[tracing::instrument(skip(
-    process_sender,
-    shutdown_rx,
-    oauth_redirect_rx,
-    imap_secrets,
-    base_url,
-    time,
-))]
+#[tracing::instrument(skip_all)]
 pub async fn receive_emails(
     process_sender: yaque::Sender,
     shutdown_rx: broadcast::Receiver<()>,
     oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
     imap_secrets: &ImapSecrets,
     base_url: &url::Url,
+    imap_username: &str,
     time: &dyn time::Port,
 ) {
+    let span = tracing::info_span!("receive_emails");
+    let _g = span.enter();
     let process_sender = Arc::new(Mutex::new(process_sender));
     let oauth_redirect_rx = Arc::new(Mutex::new(oauth_redirect_rx));
     run_retry_log_errors(
@@ -395,6 +392,7 @@ pub async fn receive_emails(
                     imap_secrets,
                     oauth_redirect_rx,
                     base_url,
+                    imap_username,
                     time,
                 )
                 .await

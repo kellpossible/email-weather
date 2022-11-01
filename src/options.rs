@@ -1,32 +1,130 @@
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
+
+use color_eyre::Help;
 use eyre::Context;
+use serde::Deserialize;
+
+/// An email account address/username e.g. `my.email@example.com`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(transparent)]
+pub struct EmailAccount(String);
+
+impl AsRef<str> for EmailAccount {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl Display for EmailAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// Global options for the application.
+#[derive(Debug, Deserialize)]
 pub struct Options {
+    /// Directory where application data is stored (including logs).
+    ///
+    /// Default is `data`.
+    #[serde(default = "default_data_dir")]
+    pub data_dir: PathBuf,
+    /// Directory where secrets are loaded from (and the token cache is stored).
+    ///
+    /// Default is `secrets`.
+    #[serde(default = "default_secrets_dir")]
+    pub secrets_dir: PathBuf,
+    /// Email account used for receiving/sending emails, the username for IMAP and SMTP.
+    pub email_account: EmailAccount,
     /// Base url used for http server.
     ///
     /// Default is `http://localhost:3000/`.
     /// Can be specified by setting the environment variable `BASE_URL`.
+    #[serde(default = "default_base_url")]
     pub base_url: url::Url,
+    /// If `true` then the existing token cache file is deleted.
+    ///
+    /// Default is `false`.
+    #[serde(default = "default_delete_token_cache")]
+    pub delete_token_cache: bool,
+    /// If `true`, and the `TOKEN_CACHE` secret is also set, then the existing token cache file is
+    /// overwritten with the contents of `TOKEN_CACHE`.
+    ///
+    /// Default is `false`.
+    #[serde(default = "default_overwrite_token_cache")]
+    pub overwrite_token_cache: bool,
+}
+
+fn default_data_dir() -> PathBuf {
+    "data".into()
+}
+
+fn default_secrets_dir() -> PathBuf {
+    "secrets".into()
+}
+
+fn default_base_url() -> url::Url {
+    "http://localhost:3000"
+        .parse()
+        .expect("Unable to parse url")
+}
+
+fn default_delete_token_cache() -> bool {
+    false
+}
+
+fn default_overwrite_token_cache() -> bool {
+    false
 }
 
 impl Options {
-    /// Initialize the options using either the environment variables or default values.
-    pub fn initialize() -> eyre::Result<Self> {
-        let base_url: url::Url = match std::env::var("BASE_URL") {
-            Ok(redirect_url) => {
-                tracing::debug!("Reading base url from BASE_URL environment variable.");
-                redirect_url
-                    .parse()
-                    .wrap_err("Error while parsing environment variable BASE_URL")?
+    /// Initialize the options using the `OPTIONS` environment variable, otherwise load from file
+    /// `options.ron` by default. If `OPTIONS` contains a file path, it will load the options from
+    /// that path, if `OPTIONS` contains a RON file definition then it will load the options from
+    /// the string contained in the variable.
+    pub async fn initialize() -> eyre::Result<Self> {
+        match std::env::var("OPTIONS") {
+            Ok(options) => match ron::from_str(&options) {
+                Ok(options) => Ok(options),
+                Err(error) => {
+                    let path = PathBuf::from(options);
+                    if path.is_file() {
+                        let options_str = tokio::fs::read_to_string(&path).await?;
+                        ron::from_str(&options_str).wrap_err_with(|| {
+                            format!("Error deserializing options file: {:?}", path)
+                        })
+                    } else {
+                        Err(error).wrap_err(
+                            "Error deserializing options from `OPTIONS` environment variable \
+                            string, or you have specified a file path which does not exist",
+                        )
+                    }
+                }
+            },
+            Err(std::env::VarError::NotPresent) => {
+                let path = Path::new("options.ron");
+                if !path.is_file() {
+                    return Err(eyre::eyre!(
+                        "No `OPTIONS` environment variable specified, and options file \
+                        `options.ron` does not exist."
+                    )
+                    .suggestion(
+                        "The following options are available to solve this:\n\
+                        + Create `options.ron`.\n\
+                        + Specify options file location with `OPTIONS` environment variable.\n\
+                        + Specify options in RON format in `OPTIONS` environment variable as a string.",
+                    ));
+                }
+                let options_str = tokio::fs::read_to_string(&path).await?;
+                ron::from_str(&options_str)
+                    .wrap_err_with(|| format!("Error deserializing options file: {:?}", path))
             }
-            Err(std::env::VarError::NotPresent) => "http://localhost:3000/"
-                .parse()
-                .expect("Expected redirect url to be in correct format"),
             Err(error) => {
-                return Err(error).wrap_err("Error reading environment variable BASE_URL")
+                return Err(error).wrap_err("Error reading `OPTIONS` environment variable")
             }
-        };
-
-        Ok(Self { base_url })
+        }
     }
 }
