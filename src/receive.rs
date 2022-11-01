@@ -381,8 +381,6 @@ pub async fn receive_emails(
     imap_username: &str,
     time: &dyn time::Port,
 ) {
-    let span = tracing::info_span!("receive_emails");
-    let _g = span.enter();
     let process_sender = Arc::new(Mutex::new(process_sender));
     let oauth_redirect_rx = Arc::new(Mutex::new(oauth_redirect_rx));
     run_retry_log_errors(
