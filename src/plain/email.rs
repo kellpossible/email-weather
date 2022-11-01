@@ -20,6 +20,6 @@ impl FromStr for Email {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        eyre::bail!("TODO")
     }
 }

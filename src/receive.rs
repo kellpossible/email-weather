@@ -17,7 +17,6 @@ use crate::{
     gis::Position,
     inreach,
     oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
-    options::EmailAccount,
     plain,
     secrets::ImapSecrets,
     task::run_retry_log_errors,
@@ -42,16 +41,46 @@ pub enum EmailKind {
 impl EmailKind {
     /// Parses an email into [`EmailKind`]. Returns `None` if the email will deliberately not be
     /// parsed (e.g. not on the whitelist of `from_address`).
-    fn parse(from_address: mail_parser::Addr, body: &str) -> eyre::Result<Option<EmailKind>> {
-        let from_address = if let Some(from_address) = from_address.address {
-            from_address
+    fn parse(message: mail_parser::Message) -> eyre::Result<Option<EmailKind>> {
+        fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
+            let text_body = message
+                .get_text_body(0)
+                .ok_or_else(|| eyre::eyre!("No text body for message"))?;
+
+            tracing::debug!("text_body: {}", text_body);
+
+            Ok(text_body)
+        }
+
+        let from_header: &mail_parser::HeaderValue = message
+            .get_header("From")
+            .ok_or_else(|| eyre::eyre!("No From header for message"))?;
+
+        let from_address = if let mail_parser::HeaderValue::Address(address) = from_header {
+            address.address.as_ref().ok_or_else(|| {
+                eyre::eyre!(
+                    "From header is missing the email address: {:?}",
+                    from_header
+                )
+            })?
         } else {
+            tracing::warn!(
+                "Skipping message due to unexpected From header value: {:?}",
+                from_header
+            );
             return Ok(None);
         };
 
         let email = match from_address.as_ref() {
-            "no.reply.inreach@garmin.com" => Self::Inreach(inreach::email::Email::from_str(body)?),
-            "l.frisken@gmail.com" => Self::Plain(plain::email::Email::from_str(body)?),
+            "no.reply.inreach@garmin.com" => {
+                let body = text_body(&message)?;
+                Self::Inreach(inreach::email::Email::from_str(&body)?)
+            }
+            // TODO: use a whitelist from options.
+            "l.frisken@gmail.com" => {
+                let body = text_body(&message)?;
+                Self::Plain(plain::email::Email::from_str(&body)?)
+            }
             _ => {
                 tracing::warn!(
                     "Skipping processing message because it is not from a whitelisted address: {}",
@@ -189,13 +218,15 @@ where
                 })?;
             fetch_stream
                 .zip(futures::stream::iter(sequence_set.iter()))
-                .map(|(result, sequence)| {
-                    match result {
-                        Ok(ok) => Ok((sequence, ok)),
-                        Err(error) => {
-                            Err(map_imap_connection_error(error, format!("Error while fetching RFC822 from message with sequence ID {}", sequence)))
-                        },
-                    }
+                .map(|(result, sequence)| match result {
+                    Ok(ok) => Ok((sequence, ok)),
+                    Err(error) => Err(map_imap_connection_error(
+                        error,
+                        format!(
+                            "Error while fetching RFC822 from message with sequence ID {}",
+                            sequence
+                        ),
+                    )),
                 })
                 .and_then(|(sequence, fetch): (&String, Fetch)| {
                     let emails_sender = emails_sender.clone();
@@ -207,51 +238,23 @@ where
                             return Ok(());
                         };
 
-                        let message =
+                        let message: mail_parser::Message =
                             mail_parser::Message::parse(rfc822_body).ok_or_else(|| {
                                 eyre::eyre!("Unable to parse fetched message body: {:?}", fetch)
                             })?;
 
-                        let from_header: &mail_parser::HeaderValue = message
-                            .get_header("From")
-                            .ok_or_else(|| eyre::eyre!("No From header for message"))?;
+                        if let Some(email) = EmailKind::parse(message)? {
+                            let email_data = serde_json::to_vec(&email)
+                                .wrap_err("Error serializing email data to json bytes")?;
 
-                        let from_address = if let mail_parser::HeaderValue::Address(address) = from_header {
-                            address.address.as_ref().ok_or_else(|| {
-                                eyre::eyre!(
-                                    "From header is missing the email address: {:?}",
-                                    from_header
-                                )
-                            })?
-                        } else {
-                            tracing::debug!(
-                                "Skipping message due to unexpected From header value: {:?}",
-                                from_header
-                            );
-                            return Ok(());
-                        };
+                            let mut sender = emails_sender.lock().await;
+                            sender
+                                .send(email_data)
+                                .await
+                                .wrap_err("Error submitting email data to send queue")?;
 
-                        if from_address.as_ref() != "no.reply.inreach@garmin.com" {
-                            tracing::warn!(
-                                "Skipping processing message because it is not from a whitelisted address: {}",
-                                from_address
-                            );
-                            return Ok(());
+                            tracing::debug!("email added to queue: {:?}", email);
                         }
-
-                        let text_body = message
-                            .get_text_body(0)
-                            .ok_or_else(|| eyre::eyre!("No text body for message"))?;
-
-                        tracing::debug!("text_body: {}", text_body);
-
-                        let email: EmailKind = EmailKind::Inreach(text_body.parse().wrap_err("Unable to parse text body as a valid inreach email")?);
-                        let email_data = serde_json::to_vec(&email).wrap_err("Error serializing email data to json bytes")?;
-
-                        let mut sender = emails_sender.lock().await;
-                        sender.send(email_data).await.wrap_err("Error submitting email data to send queue")?;
-
-                        tracing::debug!("email added to queue: {:?}", email);
 
                         Ok(())
                     }
