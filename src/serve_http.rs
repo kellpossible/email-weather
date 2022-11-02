@@ -19,6 +19,8 @@ pub struct Options {
     pub oauth_redirect_tx: mpsc::Sender<RedirectParameters>,
     /// Base url used for http server.
     pub base_url: url::Url,
+    /// Address by the http server for listening.
+    pub listen_address: SocketAddr,
 }
 
 // TODO: turn this into a generic web server, and provide a channel for transmitting the
@@ -115,13 +117,6 @@ async fn serve_http_impl(options: Options) -> eyre::Result<()> {
         crate::oauth2::redirect_server(options.oauth_redirect_tx),
     );
 
-    let addr: SocketAddr = if let Ok(var) = std::env::var("LISTEN_ADDR") {
-        var.parse()
-            .expect("Error parsing LISTEN_ADDR environment variable")
-    } else {
-        SocketAddr::from(([127, 0, 0, 1], 3000))
-    };
-
     let app = if let Some(admin_password_hash) = &options.admin_password_hash {
         let logs_url = options.base_url.join("logs/")?;
         tracing::info!("Serving logs at {}", logs_url);
@@ -134,7 +129,7 @@ async fn serve_http_impl(options: Options) -> eyre::Result<()> {
         app
     };
 
-    axum::Server::bind(&addr)
+    axum::Server::bind(&options.listen_address)
         .serve(app.into_make_service())
         .await
         .wrap_err("Server error")

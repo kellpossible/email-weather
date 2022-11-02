@@ -6,12 +6,13 @@ app = "email-weather"
 build-target = "deploy"
 
 [env]
-SECRETS_DIR = "/data-volume/secrets"
-DATA_DIR = "/data-volume"
-LISTEN_ADDR = "[::]:8080"
-# OVERWRITE_TOKEN_CACHE = "true"
-# DELETE_TOKEN_CACHE = "true"
-BASE_URL = "https://email-weather.fly.dev/"
+OPTIONS = """Options(
+    secrets_dir: "/data-volume/secrets",
+    data_dir: "/data-volume",
+    listen_address: "[::]:8080",
+    base_url: "https://email-weather.fly.dev/",
+    email_account: "email.weather.service@gmail.com",
+)"""
 
 [mounts]
 source = "email_weather_data"

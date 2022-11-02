@@ -1,6 +1,13 @@
 use email_weather::{
-    fs, oauth2::RedirectParameters, options, process::process_emails, receive::receive_emails,
-    reply::send_replies, reporting, secrets::Secrets, serve_http, time,
+    fs,
+    oauth2::RedirectParameters,
+    options::{self, Options},
+    process::process_emails,
+    receive::receive_emails,
+    reply::send_replies,
+    reporting,
+    secrets::Secrets,
+    serve_http, time,
 };
 use eyre::Context;
 use tokio::{
@@ -12,17 +19,33 @@ use tracing_appender::rolling::Rotation;
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     reporting::setup_error_hooks()?;
-    let options = Box::leak(Box::new(options::Options::initialize().await?));
+    let options_init = options::Options::initialize().await;
+    let options: &'static Options = options_init
+        .result
+        .map(|options| Box::leak(Box::new(options)))
+        .map_err(|error| {
+            options_init.logs.print();
+            error
+        })?;
 
     fs::create_dir_if_not_exists(&options.data_dir)
-        .wrap_err_with(|| format!("Unable to create data directory {:?}", options.data_dir))?;
+        .wrap_err_with(|| format!("Unable to create data directory {:?}", options.data_dir))
+        .map_err(|error| {
+            options_init.logs.print();
+            error
+        })?;
 
     let reporting_options: &'static reporting::Options = Box::leak(Box::new(reporting::Options {
         data_dir: options.data_dir.clone(),
         log_rotation: Rotation::DAILY,
     }));
 
-    let _reporting_guard = reporting::setup_logging(reporting_options)?;
+    let _reporting_guard = reporting::setup_logging(reporting_options).map_err(|error| {
+        options_init.logs.print();
+        error
+    })?;
+
+    options_init.logs.present();
 
     fs::create_dir_if_not_exists(&options.secrets_dir).wrap_err_with(|| {
         format!(
@@ -107,6 +130,7 @@ async fn main() -> eyre::Result<()> {
         admin_password_hash: secrets.admin_password_hash.as_ref(),
         oauth_redirect_tx,
         base_url: options.base_url.clone(),
+        listen_address: options.listen_address,
     };
     let serve_http_join = tokio::spawn(serve_http::serve_http(
         serve_http_shutdown_rx,

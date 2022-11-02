@@ -13,8 +13,9 @@ use axum::{
     routing::get,
     Router,
 };
+use bytesize::ByteSize;
 use eyre::Context;
-use futures::{Stream, TryStreamExt};
+use futures::{stream, Stream, StreamExt, TryStreamExt};
 use html_builder::Html5;
 use reqwest::StatusCode;
 use secrecy::{ExposeSecret, Secret, SecretString};
@@ -324,21 +325,37 @@ async fn serve_logs_index(log_dir: &Path) -> eyre::Result<Html<String>> {
     let mut html = buf.html();
     write!(html.head().title(), "email-weather logs")?;
     let mut body = html.body();
-    let mut ul = body.ul();
 
     let mut file_paths: Vec<PathBuf> = files_stream(log_dir).await?.try_collect().await?;
     file_paths.sort();
 
-    for path in file_paths {
-        let mut li = ul.li();
-        let filename = path
-            .file_name()
-            .ok_or_else(|| eyre::eyre!("Expected path to have a filename"))?
-            .to_str()
-            .ok_or_else(|| eyre::eyre!("Unable to convert filename to utf-8 string"))?;
-        let href_attr = format!(r#"href="/logs/{}""#, filename);
-        let mut a = li.a().attr(&href_attr);
-        write!(a, "{}", filename)?;
+    {
+        let mut p = body.p();
+        let total_size: u64 = stream::iter(&file_paths)
+            .map(Ok)
+            .try_fold(0, |mut acc, path| async move {
+                let metadata = tokio::fs::metadata(path).await?;
+                acc += metadata.len();
+                Result::<u64, eyre::Error>::Ok(acc)
+            })
+            .await?;
+
+        write!(p, "Log Size: {}", ByteSize(total_size))?;
+    }
+
+    {
+        let mut ul = body.ul();
+        for path in file_paths {
+            let mut li = ul.li();
+            let filename = path
+                .file_name()
+                .ok_or_else(|| eyre::eyre!("Expected path to have a filename"))?
+                .to_str()
+                .ok_or_else(|| eyre::eyre!("Unable to convert filename to utf-8 string"))?;
+            let href_attr = format!(r#"href="/logs/{}""#, filename);
+            let mut a = li.a().attr(&href_attr);
+            write!(a, "{}", filename)?;
+        }
     }
 
     Ok(Html::from(buf.finish()))
