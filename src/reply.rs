@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    inreach, receive::EmailAddress, retry::ExponentialBackoff, task::run_retry_log_errors, time,
+    inreach, receive::EmailAddress, retry::ExponentialBackoff, task::run_retry_log_errors, time, plain,
 };
 
 /// A reply to an inreach device.
@@ -39,18 +39,20 @@ pub enum Reply {
 }
 
 async fn send_reply(reply: &Reply, http_client: &reqwest::Client) -> eyre::Result<()> {
+    tracing::info!("Sending reply: {:?}", reply);
+
     match reply {
         Reply::InReach(reply) => {
-            tracing::info!("Sending reply: {:?}", reply);
+            // TODO refactor move Reply into inreach::reply
             inreach::reply::reply(http_client, &reply.referral_url, &reply.message)
                 .await
                 .wrap_err("Error sending reply message")?;
-            tracing::info!("Successfully sent reply!");
-        }
-        Reply::Plain(reply) => {
-            tracing::info!("Sending reply: {:?}", reply);
+        },
+        Reply::Plain(_) => {
+            // TODO send plain reply
         }
     }
+    tracing::info!("Successfully sent reply!");
 
     Ok(())
 }

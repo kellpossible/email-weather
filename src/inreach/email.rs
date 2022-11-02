@@ -8,12 +8,12 @@ use std::{borrow::Cow, str::FromStr};
 
 use crate::{
     gis::Position,
-    receive::{self, EmailAddress, ParseEmail},
+    receive::{self, EmailAddress, ParseReceivedEmail},
 };
 
 /// An email received from an inreach device.
 #[derive(Deserialize, Serialize, Debug)]
-pub struct Email {
+pub struct Received {
     /// The name of the person who sent the message.
     /// TODO: remove as part of anonymizing #12
     pub from_name: String,
@@ -23,7 +23,7 @@ pub struct Email {
     pub position: Position,
 }
 
-impl receive::Email for Email {
+impl receive::Received for Received {
     fn position(&self) -> Position {
         todo!()
     }
@@ -42,7 +42,7 @@ enum ParseState {
     Done,
 }
 
-impl ParseEmail for Email {
+impl ParseReceivedEmail for Received {
     type Err = eyre::Error;
 
     fn parse_email(_from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err> {
@@ -109,7 +109,7 @@ impl ParseEmail for Email {
 
 #[cfg(test)]
 mod test {
-    use super::Email;
+    use super::Received;
 
     const TEST_BODY: &'static str = r#"
 Test
@@ -126,7 +126,7 @@ learn more, visit http://explore.garmin.com/inreach.
     "#;
     #[test]
     fn test_parse_email() {
-        let email: Email = TEST_BODY.parse().unwrap();
+        let email: Received = TEST_BODY.parse().unwrap();
 
         assert_eq!("Luke Frisken", email.from_name);
         assert_eq!(

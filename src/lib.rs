@@ -17,5 +17,6 @@ pub mod reporting;
 pub mod retry;
 pub mod secrets;
 pub mod serve_http;
+pub mod smtp;
 pub mod task;
 pub mod time;

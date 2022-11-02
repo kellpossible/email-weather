@@ -1,3 +1,7 @@
+//! Global options for the application.
+//!
+//! See [`Options`].
+
 use std::{
     borrow::Cow,
     fmt::Display,

@@ -24,21 +24,21 @@ use crate::{
 };
 
 /// An email received via IMAP.
-pub trait Email {
+pub trait Received {
     /// Position (latitude, longitude).
     fn position(&self) -> Position;
 }
 
 /// Sum type of all possible [`Email`]s that can be received and parsed via IMAP.
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Received {
+pub enum ReceivedKind {
     /// Email received from an inreach device.
-    Inreach(inreach::email::Email),
+    Inreach(inreach::email::Received),
     /// Plain text email.
-    Plain(plain::email::Email),
+    Plain(plain::email::Received),
 }
 
-pub trait ParseEmail: Sized {
+pub trait ParseReceivedEmail: Sized {
     type Err;
 
     fn parse_email(from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err>;
@@ -74,10 +74,10 @@ impl<'a> TryFrom<&mail_parser::Addr<'a>> for EmailAddress {
     }
 }
 
-impl Received {
+impl ReceivedKind {
     /// Parses an email into [`EmailKind`]. Returns `None` if the email will deliberately not be
     /// parsed (e.g. not on the whitelist of `from_address`).
-    fn parse(message: mail_parser::Message) -> eyre::Result<Option<Received>> {
+    fn parse(message: mail_parser::Message) -> eyre::Result<Option<ReceivedKind>> {
         fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
             let text_body = message
                 .get_text_body(0)
@@ -105,12 +105,12 @@ impl Received {
         let email = match from_address.as_ref() {
             "no.reply.inreach@garmin.com" => {
                 let body = text_body(&message)?;
-                Self::Inreach(inreach::email::Email::parse_email(from_address, body)?)
+                Self::Inreach(inreach::email::Received::parse_email(from_address, body)?)
             }
             // TODO: use a whitelist from options.
             "l.frisken@gmail.com" => {
                 let body = text_body(&message)?;
-                Self::Plain(plain::email::Email::parse_email(from_address, body)?)
+                Self::Plain(plain::email::Received::parse_email(from_address, body)?)
             }
             _ => {
                 tracing::warn!(
@@ -125,11 +125,11 @@ impl Received {
     }
 }
 
-impl Email for Received {
+impl Received for ReceivedKind {
     fn position(&self) -> Position {
         match self {
-            Received::Inreach(email) => email.position(),
-            Received::Plain(email) => email.position(),
+            ReceivedKind::Inreach(email) => email.position(),
+            ReceivedKind::Plain(email) => email.position(),
         }
     }
 }
@@ -274,7 +274,7 @@ where
                                 eyre::eyre!("Unable to parse fetched message body: {:?}", fetch)
                             })?;
 
-                        if let Some(email) = Received::parse(message)? {
+                        if let Some(email) = ReceivedKind::parse(message)? {
                             let email_data = serde_json::to_vec(&email)
                                 .wrap_err("Error serializing email data to json bytes")?;
 

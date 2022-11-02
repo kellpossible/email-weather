@@ -4,25 +4,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     gis::Position,
-    receive::{self, EmailAddress, ParseEmail},
+    receive::{self, EmailAddress, ParseReceivedEmail},
 };
 
 /// A plain text email that was received.
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Email {
+pub struct Received {
     /// Requested position for forecast.
     pub position: Position,
     /// Address that this email was received from.
     pub from: EmailAddress,
 }
 
-impl receive::Email for Email {
+impl receive::Received for Received {
     fn position(&self) -> Position {
         self.position
     }
 }
 
-impl ParseEmail for Email {
+impl ParseReceivedEmail for Received {
     type Err = eyre::Error;
 
     fn parse_email<'a>(from: EmailAddress, _body: Cow<'a, str>) -> Result<Self, Self::Err> {
