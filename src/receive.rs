@@ -1,6 +1,6 @@
 //! See [`receive_emails()`].
 
-use std::{borrow::Cow, str::FromStr, sync::Arc};
+use std::{borrow::Cow, fmt::Display, str::FromStr, sync::Arc};
 
 use async_imap::types::Fetch;
 use eyre::Context;
@@ -31,17 +31,53 @@ pub trait Email {
 
 /// Sum type of all possible [`Email`]s that can be received and parsed via IMAP.
 #[derive(Serialize, Deserialize, Debug)]
-pub enum EmailKind {
+pub enum Received {
     /// Email received from an inreach device.
     Inreach(inreach::email::Email),
     /// Plain text email.
     Plain(plain::email::Email),
 }
 
-impl EmailKind {
+pub trait ParseEmail: Sized {
+    type Err;
+
+    fn parse_email(from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err>;
+}
+
+#[derive(Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
+#[serde(transparent)]
+pub struct EmailAddress(String);
+
+impl Display for EmailAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for EmailAddress {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl<'a> TryFrom<&mail_parser::Addr<'a>> for EmailAddress {
+    type Error = eyre::Error;
+    fn try_from(address: &mail_parser::Addr<'a>) -> Result<Self, Self::Error> {
+        if let Some(address) = &address.address {
+            Ok(Self((**address).to_owned()))
+        } else {
+            Err(eyre::eyre!(
+                "Address {:?} does not contain an address",
+                address
+            ))
+        }
+    }
+}
+
+impl Received {
     /// Parses an email into [`EmailKind`]. Returns `None` if the email will deliberately not be
     /// parsed (e.g. not on the whitelist of `from_address`).
-    fn parse(message: mail_parser::Message) -> eyre::Result<Option<EmailKind>> {
+    fn parse(message: mail_parser::Message) -> eyre::Result<Option<Received>> {
         fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
             let text_body = message
                 .get_text_body(0)
@@ -57,12 +93,7 @@ impl EmailKind {
             .ok_or_else(|| eyre::eyre!("No From header for message"))?;
 
         let from_address = if let mail_parser::HeaderValue::Address(address) = from_header {
-            address.address.as_ref().ok_or_else(|| {
-                eyre::eyre!(
-                    "From header is missing the email address: {:?}",
-                    from_header
-                )
-            })?
+            EmailAddress::try_from(address).wrap_err("Invalid From header address")?
         } else {
             tracing::warn!(
                 "Skipping message due to unexpected From header value: {:?}",
@@ -74,12 +105,12 @@ impl EmailKind {
         let email = match from_address.as_ref() {
             "no.reply.inreach@garmin.com" => {
                 let body = text_body(&message)?;
-                Self::Inreach(inreach::email::Email::from_str(&body)?)
+                Self::Inreach(inreach::email::Email::parse_email(from_address, body)?)
             }
             // TODO: use a whitelist from options.
             "l.frisken@gmail.com" => {
                 let body = text_body(&message)?;
-                Self::Plain(plain::email::Email::from_str(&body)?)
+                Self::Plain(plain::email::Email::parse_email(from_address, body)?)
             }
             _ => {
                 tracing::warn!(
@@ -94,11 +125,11 @@ impl EmailKind {
     }
 }
 
-impl Email for EmailKind {
+impl Email for Received {
     fn position(&self) -> Position {
         match self {
-            EmailKind::Inreach(email) => email.position(),
-            EmailKind::Plain(email) => email.position(),
+            Received::Inreach(email) => email.position(),
+            Received::Plain(email) => email.position(),
         }
     }
 }
@@ -243,7 +274,7 @@ where
                                 eyre::eyre!("Unable to parse fetched message body: {:?}", fetch)
                             })?;
 
-                        if let Some(email) = EmailKind::parse(message)? {
+                        if let Some(email) = Received::parse(message)? {
                             let email_data = serde_json::to_vec(&email)
                                 .wrap_err("Error serializing email data to json bytes")?;
 

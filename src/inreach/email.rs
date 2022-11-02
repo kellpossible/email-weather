@@ -4,9 +4,12 @@ use eyre::Context;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
-use crate::{gis::Position, receive};
+use crate::{
+    gis::Position,
+    receive::{self, EmailAddress, ParseEmail},
+};
 
 /// An email received from an inreach device.
 #[derive(Deserialize, Serialize, Debug)]
@@ -39,17 +42,17 @@ enum ParseState {
     Done,
 }
 
-impl FromStr for Email {
+impl ParseEmail for Email {
     type Err = eyre::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn parse_email(_from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err> {
         let mut from_name: Option<String> = None;
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
         let mut longitude: Option<f32> = None;
         let mut parse_state = ParseState::ViewLocation;
 
-        for line in s.split('\n') {
+        for line in body.split('\n') {
             match parse_state {
                 ParseState::ViewLocation => {
                     if let Some(c) = (*VIEW_LOCATION_RE).captures(line.trim()) {

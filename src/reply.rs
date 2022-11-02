@@ -6,7 +6,9 @@ use eyre::Context;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::{inreach, retry::ExponentialBackoff, task::run_retry_log_errors, time};
+use crate::{
+    inreach, receive::EmailAddress, retry::ExponentialBackoff, task::run_retry_log_errors, time,
+};
 
 /// A reply to an inreach device.
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -18,11 +20,22 @@ pub struct InReach {
     pub message: String,
 }
 
+/// Reply to a standard plain text email.
+#[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
+pub struct Plain {
+    /// The message to send in the reply.
+    pub message: String,
+    /// Who the reply is addressed to.
+    pub to: EmailAddress,
+}
+
 /// A reply message.
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub enum Reply {
-    /// Reply to an inreach device.
+    /// See [`InReach`].
     InReach(InReach),
+    /// See [`Plain`].
+    Plain(Plain),
 }
 
 async fn send_reply(reply: &Reply, http_client: &reqwest::Client) -> eyre::Result<()> {
@@ -33,6 +46,9 @@ async fn send_reply(reply: &Reply, http_client: &reqwest::Client) -> eyre::Resul
                 .await
                 .wrap_err("Error sending reply message")?;
             tracing::info!("Successfully sent reply!");
+        }
+        Reply::Plain(reply) => {
+            tracing::info!("Sending reply: {:?}", reply);
         }
     }
 
