@@ -1,6 +1,6 @@
 //! See [`receive_emails()`].
 
-use std::{borrow::Cow, fmt::Display, str::FromStr, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use async_imap::types::Fetch;
 use eyre::Context;
@@ -14,6 +14,7 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
+    email,
     gis::Position,
     inreach,
     oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
@@ -41,37 +42,7 @@ pub enum ReceivedKind {
 pub trait ParseReceivedEmail: Sized {
     type Err;
 
-    fn parse_email(from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err>;
-}
-
-#[derive(Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
-#[serde(transparent)]
-pub struct EmailAddress(String);
-
-impl Display for EmailAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl AsRef<str> for EmailAddress {
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
-impl<'a> TryFrom<&mail_parser::Addr<'a>> for EmailAddress {
-    type Error = eyre::Error;
-    fn try_from(address: &mail_parser::Addr<'a>) -> Result<Self, Self::Error> {
-        if let Some(address) = &address.address {
-            Ok(Self((**address).to_owned()))
-        } else {
-            Err(eyre::eyre!(
-                "Address {:?} does not contain an address",
-                address
-            ))
-        }
-    }
+    fn parse_email(from: email::Account, body: Cow<'_, str>) -> Result<Self, Self::Err>;
 }
 
 impl ReceivedKind {
@@ -92,30 +63,31 @@ impl ReceivedKind {
             .get_header("From")
             .ok_or_else(|| eyre::eyre!("No From header for message"))?;
 
-        let from_address = if let mail_parser::HeaderValue::Address(address) = from_header {
-            EmailAddress::try_from(address).wrap_err("Invalid From header address")?
-        } else {
-            tracing::warn!(
-                "Skipping message due to unexpected From header value: {:?}",
-                from_header
-            );
-            return Ok(None);
-        };
+        let from_account: email::Account =
+            if let mail_parser::HeaderValue::Address(address) = from_header {
+                email::Account::try_from(address).wrap_err("Invalid From header address")?
+            } else {
+                tracing::warn!(
+                    "Skipping message due to unexpected From header value: {:?}",
+                    from_header
+                );
+                return Ok(None);
+            };
 
-        let email = match from_address.as_ref() {
+        let email = match from_account.email_str() {
             "no.reply.inreach@garmin.com" => {
                 let body = text_body(&message)?;
-                Self::Inreach(inreach::email::Received::parse_email(from_address, body)?)
+                Self::Inreach(inreach::email::Received::parse_email(from_account, body)?)
             }
             // TODO: use a whitelist from options.
             "l.frisken@gmail.com" => {
                 let body = text_body(&message)?;
-                Self::Plain(plain::email::Received::parse_email(from_address, body)?)
+                Self::Plain(plain::email::Received::parse_email(from_account, body)?)
             }
             _ => {
                 tracing::warn!(
                     "Skipping processing message because it is not from a whitelisted address: {}",
-                    from_address
+                    from_account
                 );
                 return Ok(None);
             }
@@ -236,6 +208,7 @@ where
 
     if !sequence_set.is_empty() {
         tracing::debug!("Obtained UNSEEN messages: {:?}", sequence_set);
+        // TODO: fetch and check RFC822.SIZE before fetching the entire body.
         let fetch_sequences: String = sequence_set.join(",");
         {
             let fetch_stream = imap_session

@@ -13,24 +13,9 @@ use color_eyre::Help;
 use eyre::Context;
 use ron::ser::PrettyConfig;
 use serde::{ser::Error, Deserialize, Serialize};
-use tracing::{Level, Metadata};
+use tracing::Level;
 
-/// An email account address/username e.g. `my.email@example.com`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct EmailAccount(String);
-
-impl AsRef<str> for EmailAccount {
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
-impl Display for EmailAccount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
+use crate::email;
 
 /// Global options for the application.
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,7 +31,7 @@ pub struct Options {
     #[serde(default = "default_secrets_dir")]
     pub secrets_dir: PathBuf,
     /// Email account used for receiving/sending emails, the username for IMAP and SMTP.
-    pub email_account: EmailAccount,
+    pub email_account: email::Account,
     /// Base url used for http server.
     ///
     /// Default is `http://localhost:3000/`.

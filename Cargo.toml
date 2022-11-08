@@ -29,6 +29,7 @@ eyre = "0.6"
 html-builder = "0.4"
 http-body = "0.4"
 humantime = "2.1" # TODO: remove and replace with proper localization/locale
+lettre = { version = "0.10", features = ["smtp-transport", "builder", "serde"] }
 url = { version = "2.3", features = ["serde"] }
 secrecy = { version = "0.8", features = ["serde"] }
 serde_urlencoded = "0.7"

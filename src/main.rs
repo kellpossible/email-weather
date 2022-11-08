@@ -108,7 +108,7 @@ async fn main() -> eyre::Result<()> {
         oauth_redirect_rx,
         &secrets.imap_secrets,
         &options.base_url,
-        options.email_account.as_ref(),
+        options.email_account.email_str(),
         time,
     ));
     let process_join = tokio::spawn(process_emails(
@@ -122,6 +122,7 @@ async fn main() -> eyre::Result<()> {
         reply_receiver,
         send_replies_shutdown_rx,
         http_client,
+        &options.email_account,
         time,
     ));
 

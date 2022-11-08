@@ -6,9 +6,7 @@ use eyre::Context;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::{
-    inreach, receive::EmailAddress, retry::ExponentialBackoff, task::run_retry_log_errors, time, plain,
-};
+use crate::{email, inreach, retry::ExponentialBackoff, task::run_retry_log_errors, time};
 
 /// A reply to an inreach device.
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
@@ -26,7 +24,7 @@ pub struct Plain {
     /// The message to send in the reply.
     pub message: String,
     /// Who the reply is addressed to.
-    pub to: EmailAddress,
+    pub to: email::Account,
 }
 
 /// A reply message.
@@ -38,7 +36,11 @@ pub enum Reply {
     Plain(Plain),
 }
 
-async fn send_reply(reply: &Reply, http_client: &reqwest::Client) -> eyre::Result<()> {
+async fn send_reply(
+    reply: &Reply,
+    http_client: &reqwest::Client,
+    email_account: &email::Account,
+) -> eyre::Result<()> {
     tracing::info!("Sending reply: {:?}", reply);
 
     match reply {
@@ -47,9 +49,19 @@ async fn send_reply(reply: &Reply, http_client: &reqwest::Client) -> eyre::Resul
             inreach::reply::reply(http_client, &reply.referral_url, &reply.message)
                 .await
                 .wrap_err("Error sending reply message")?;
-        },
-        Reply::Plain(_) => {
+        }
+        Reply::Plain(reply) => {
             // TODO send plain reply
+            //https://docs.rs/lettre/latest/lettre/transport/smtp/authentication/enum.Mechanism.html
+            //XOAUTH2
+            // lettre::Message::builder()
+            //     .from(lettre::message::Mailbox::from(reply.to)
+            let message: lettre::Message = lettre::Message::builder()
+                .from(email_account.clone().into())
+                .to(reply.to.clone().into())
+                .body(reply.message.clone())?;
+
+            tracing::debug!("Replying: {:?}", message);
         }
     }
     tracing::info!("Successfully sent reply!");
@@ -63,6 +75,7 @@ const RETRY_ATTEMPTS: usize = 5;
 async fn send_replies_impl(
     reply_receiver: &mut yaque::Receiver,
     http_client: reqwest::Client,
+    email_account: &email::Account,
     time: &dyn time::Port,
 ) -> eyre::Result<()> {
     loop {
@@ -74,7 +87,7 @@ async fn send_replies_impl(
             ExponentialBackoff::new(Duration::from_secs(5), Duration::from_secs(60 * 10))
                 .expect("Invalid backoff");
         'retry: loop {
-            match send_reply(&reply, &http_client).await {
+            match send_reply(&reply, &http_client, email_account).await {
                 Ok(_) => break 'retry,
                 Err(error) => {
                     tracing::error!("{:?}", error);
@@ -101,6 +114,7 @@ pub async fn send_replies(
     reply_receiver: yaque::Receiver,
     shutdown_rx: tokio::sync::broadcast::Receiver<()>,
     http_client: reqwest::Client,
+    email_account: &email::Account,
     time: &dyn time::Port,
 ) {
     let reply_receiver = Arc::new(Mutex::new(reply_receiver));
@@ -111,7 +125,13 @@ pub async fn send_replies(
             let reply_receiver = reply_receiver.clone();
             async move {
                 let mut reply_receiver = reply_receiver.lock().await;
-                send_replies_impl(&mut reply_receiver, http_client.clone(), time).await
+                send_replies_impl(
+                    &mut reply_receiver,
+                    http_client.clone(),
+                    email_account,
+                    time,
+                )
+                .await
             }
         },
         shutdown_rx,

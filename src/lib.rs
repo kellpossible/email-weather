@@ -4,6 +4,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_errors_doc)]
 
+pub mod email;
 pub mod fs;
 pub mod gis;
 pub mod inreach;

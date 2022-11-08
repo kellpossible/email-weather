@@ -4,11 +4,12 @@ use eyre::Context;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::{borrow::Cow, str::FromStr};
+use std::borrow::Cow;
 
 use crate::{
+    email,
     gis::Position,
-    receive::{self, EmailAddress, ParseReceivedEmail},
+    receive::{self, ParseReceivedEmail},
 };
 
 /// An email received from an inreach device.
@@ -45,7 +46,7 @@ enum ParseState {
 impl ParseReceivedEmail for Received {
     type Err = eyre::Error;
 
-    fn parse_email(_from: EmailAddress, body: Cow<'_, str>) -> Result<Self, Self::Err> {
+    fn parse_email(_from: email::Account, body: Cow<'_, str>) -> Result<Self, Self::Err> {
         let mut from_name: Option<String> = None;
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
@@ -110,6 +111,7 @@ impl ParseReceivedEmail for Received {
 #[cfg(test)]
 mod test {
     use super::Received;
+    use crate::{email, receive::ParseReceivedEmail};
 
     const TEST_BODY: &'static str = r#"
 Test
@@ -126,7 +128,8 @@ learn more, visit http://explore.garmin.com/inreach.
     "#;
     #[test]
     fn test_parse_email() {
-        let email: Received = TEST_BODY.parse().unwrap();
+        let from: email::Account = "Test <test@example.com>".parse().unwrap();
+        let email = Received::parse_email(from, TEST_BODY.into()).unwrap();
 
         assert_eq!("Luke Frisken", email.from_name);
         assert_eq!(
