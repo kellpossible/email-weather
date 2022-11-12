@@ -25,6 +25,8 @@ pub struct Plain {
     pub message: String,
     /// Who the reply is addressed to.
     pub to: email::Account,
+    /// Message id that this is in reply to.
+    pub in_reply_to_message_id: Option<String>,
 }
 
 /// A reply message.
@@ -56,10 +58,17 @@ async fn send_reply(
             //XOAUTH2
             // lettre::Message::builder()
             //     .from(lettre::message::Mailbox::from(reply.to)
-            let message: lettre::Message = lettre::Message::builder()
+            let builder = lettre::Message::builder()
                 .from(email_account.clone().into())
-                .to(reply.to.clone().into())
-                .body(reply.message.clone())?;
+                .to(reply.to.clone().into());
+
+            let builder = if let Some(id) = &reply.in_reply_to_message_id {
+                builder.in_reply_to(id.clone())
+            } else {
+                builder
+            };
+
+            let message: lettre::Message = builder.body(reply.message.clone())?;
 
             tracing::debug!("Replying: {:?}", message);
         }

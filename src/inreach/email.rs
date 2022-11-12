@@ -47,13 +47,18 @@ impl ParseReceivedEmail for Received {
     type Err = eyre::Error;
 
     fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err> {
+        let body = text_body(&message)?;
+        Self::parse(body)
+    }
+}
+
+impl Received {
+    fn parse<'a>(body: Cow<'a, str>) -> Result<Self, eyre::Error> {
         let mut from_name: Option<String> = None;
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
         let mut longitude: Option<f32> = None;
         let mut parse_state = ParseState::ViewLocation;
-
-        let body = text_body(&message)?;
 
         for line in body.split('\n') {
             match parse_state {
@@ -113,7 +118,6 @@ impl ParseReceivedEmail for Received {
 #[cfg(test)]
 mod test {
     use super::Received;
-    use crate::{email, receive::ParseReceivedEmail};
 
     const TEST_BODY: &'static str = r#"
 Test
@@ -130,8 +134,7 @@ learn more, visit http://explore.garmin.com/inreach.
     "#;
     #[test]
     fn test_parse_email() {
-        let from: email::Account = "Test <test@example.com>".parse().unwrap();
-        let email = Received::parse_email(from, TEST_BODY.into()).unwrap();
+        let email = Received::parse(TEST_BODY.into()).unwrap();
 
         assert_eq!("Luke Frisken", email.from_name);
         assert_eq!(

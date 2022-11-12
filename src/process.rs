@@ -227,6 +227,7 @@ async fn process_emails_impl(
             ReceivedKind::Plain(email) => Reply::Plain(Plain {
                 to: email.from,
                 message,
+                in_reply_to_message_id: email.message_id,
             }),
         };
 
