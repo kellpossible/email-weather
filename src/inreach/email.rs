@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use crate::{
     email,
     gis::Position,
-    receive::{self, ParseReceivedEmail},
+    receive::{self, text_body, ParseReceivedEmail},
 };
 
 /// An email received from an inreach device.
@@ -46,12 +46,14 @@ enum ParseState {
 impl ParseReceivedEmail for Received {
     type Err = eyre::Error;
 
-    fn parse_email(_from: email::Account, body: Cow<'_, str>) -> Result<Self, Self::Err> {
+    fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err> {
         let mut from_name: Option<String> = None;
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
         let mut longitude: Option<f32> = None;
         let mut parse_state = ParseState::ViewLocation;
+
+        let body = text_body(&message)?;
 
         for line in body.split('\n') {
             match parse_state {

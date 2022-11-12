@@ -39,61 +39,80 @@ pub enum ReceivedKind {
     Plain(plain::email::Received),
 }
 
-pub trait ParseReceivedEmail: Sized {
-    type Err;
-
-    fn parse_email(from: email::Account, body: Cow<'_, str>) -> Result<Self, Self::Err>;
+#[derive(Debug, thiserror::Error)]
+pub enum ParseReceivedEmailError {
+    #[error("Rejected email because: {reason}")]
+    Rejected { reason: Cow<'static, str> },
+    #[error(transparent)]
+    Unexpected(#[from] eyre::Error),
 }
 
-impl ReceivedKind {
-    /// Parses an email into [`EmailKind`]. Returns `None` if the email will deliberately not be
+pub trait ParseReceivedEmail: Sized {
+    /// Error produced while parsing the received email.
+    type Err;
+
+    /// Parses an email into self. Returns `None` if the email will deliberately not be
     /// parsed (e.g. not on the whitelist of `from_address`).
-    fn parse(message: mail_parser::Message) -> eyre::Result<Option<ReceivedKind>> {
-        fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
-            let text_body = message
-                .get_text_body(0)
-                .ok_or_else(|| eyre::eyre!("No text body for message"))?;
+    fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err>;
+}
 
-            tracing::debug!("text_body: {}", text_body);
+pub(crate) fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
+    tracing::debug!("{:?}", message.get_headers());
+    let text_body = message
+        .get_text_body(0)
+        .ok_or_else(|| eyre::eyre!("No text body for message"))?;
 
-            Ok(text_body)
-        }
+    tracing::debug!("text_body: {}", text_body);
 
-        let from_header: &mail_parser::HeaderValue = message
-            .get_header("From")
-            .ok_or_else(|| eyre::eyre!("No From header for message"))?;
+    Ok(text_body)
+}
 
-        let from_account: email::Account =
-            if let mail_parser::HeaderValue::Address(address) = from_header {
-                email::Account::try_from(address).wrap_err("Invalid From header address")?
-            } else {
-                tracing::warn!(
-                    "Skipping message due to unexpected From header value: {:?}",
-                    from_header
-                );
-                return Ok(None);
-            };
+pub(crate) fn from_account(message: &mail_parser::Message) -> eyre::Result<email::Account> {
+    let from_header: &mail_parser::HeaderValue = message
+        .get_header("From")
+        .ok_or_else(|| eyre::eyre!("No From header for message"))?;
 
+    if let mail_parser::HeaderValue::Address(address) = from_header {
+        email::Account::try_from(address).wrap_err("Invalid From header address")
+    } else {
+        Err(eyre::eyre!(
+            "Unexpected From header value: {:?}",
+            from_header
+        ))
+    }
+}
+
+pub(crate) fn message_id<'a>(message: &'a mail_parser::Message) -> Option<&'a Cow<'a, str>> {
+    message
+        .get_header("Message-Id")
+        .and_then(|header| match header {
+            mail_parser::HeaderValue::Text(text) => Some(text),
+            _ => {
+                tracing::warn!("Unexpected `Message-Id` header format: {:?}", header);
+                None
+            }
+        })
+}
+
+impl ParseReceivedEmail for ReceivedKind {
+    type Err = ParseReceivedEmailError;
+
+    fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err> {
+        let from_account = from_account(&message)?;
         let email = match from_account.email_str() {
             "no.reply.inreach@garmin.com" => {
-                let body = text_body(&message)?;
-                Self::Inreach(inreach::email::Received::parse_email(from_account, body)?)
+                Self::Inreach(inreach::email::Received::parse_email(message)?)
             }
             // TODO: use a whitelist from options.
-            "l.frisken@gmail.com" => {
-                let body = text_body(&message)?;
-                Self::Plain(plain::email::Received::parse_email(from_account, body)?)
-            }
+            "l.frisken@gmail.com" => Self::Plain(plain::email::Received::parse_email(message)?),
             _ => {
-                tracing::warn!(
-                    "Skipping processing message because it is not from a whitelisted address: {}",
-                    from_account
-                );
-                return Ok(None);
+                return Err(ParseReceivedEmailError::Rejected {
+                    reason: "Not from a whitelisted address".into(),
+                });
             }
         };
 
-        Ok(Some(email))
+        Ok(email)
     }
 }
 
@@ -247,17 +266,27 @@ where
                                 eyre::eyre!("Unable to parse fetched message body: {:?}", fetch)
                             })?;
 
-                        if let Some(email) = ReceivedKind::parse(message)? {
-                            let email_data = serde_json::to_vec(&email)
-                                .wrap_err("Error serializing email data to json bytes")?;
+                        match ReceivedKind::parse_email(message) {
+                            Ok(email) => {
+                                let email_data = serde_json::to_vec(&email)
+                                    .wrap_err("Error serializing email data to json bytes")?;
 
-                            let mut sender = emails_sender.lock().await;
-                            sender
-                                .send(email_data)
-                                .await
-                                .wrap_err("Error submitting email data to send queue")?;
+                                let mut sender = emails_sender.lock().await;
+                                sender
+                                    .send(email_data)
+                                    .await
+                                    .wrap_err("Error submitting email data to send queue")?;
 
-                            tracing::debug!("email added to queue: {:?}", email);
+                                tracing::debug!("email added to queue: {:?}", email);
+                            }
+                            Err(error) => match error {
+                                ParseReceivedEmailError::Rejected { .. } => {
+                                    tracing::warn!("{}", error);
+                                }
+                                ParseReceivedEmailError::Unexpected(error) => {
+                                    return Err(error.into())
+                                }
+                            },
                         }
 
                         Ok(())
