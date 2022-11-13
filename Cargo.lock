@@ -1421,10 +1421,12 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eabca5e0b4d0e98e7f2243fb5b7520b6af2b65d8f87bcc86f2c75185a6ff243"
 dependencies = [
+ "async-trait",
  "base64",
  "email-encoding",
  "email_address",
  "fastrand",
+ "futures-io",
  "futures-util",
  "hostname",
  "httpdate",
@@ -1436,6 +1438,8 @@ dependencies = [
  "quoted_printable",
  "serde",
  "socket2",
+ "tokio",
+ "tokio-native-tls",
 ]
 
 [[package]]

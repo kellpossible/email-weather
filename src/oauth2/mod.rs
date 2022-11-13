@@ -30,6 +30,8 @@ pub use device::DeviceFlow;
 pub use installed::InstalledFlow;
 pub use service_account::ServiceAccountFlow;
 
+use crate::secrets::OauthSecrets;
+
 pub enum ConsentRedirect {
     /// Out of band redirect, exchange code using user's clipboard.
     /// **Warning**: Google has deprecated this method.
@@ -398,6 +400,32 @@ pub fn redirect_server(tx: mpsc::Sender<RedirectParameters>) -> Router {
         "/",
         get(|path| async move { get_redirect(path, tx.clone()).await }),
     )
+}
+
+pub fn setup_flow(
+    secrets: &OauthSecrets,
+    base_url: &url::Url,
+    oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
+) -> eyre::Result<InstalledFlow> {
+    let scopes = vec![
+        // https://developers.google.com/gmail/imap/xoauth2-protocol
+        oauth2::Scope::new("https://mail.google.com/".to_string()),
+    ];
+
+    let redirect_url = RedirectUrl::from_url(base_url.join("oauth2")?);
+    Ok(crate::oauth2::InstalledFlow::new(
+        ConsentRedirect::Http {
+            redirect_rx: Arc::new(Mutex::new(oauth_redirect_rx)),
+            url: redirect_url,
+        },
+        secrets.client_secret.clone().ok_or_else(|| {
+            eyre::eyre!(
+                "Client secret has not been provided, and is required for Installed OAUTH2 flow"
+            )
+        })?,
+        scopes,
+        secrets.token_cache_path.clone(),
+    ))
 }
 
 #[cfg(test)]

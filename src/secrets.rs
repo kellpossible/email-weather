@@ -9,7 +9,7 @@ use secrecy::SecretString;
 use crate::oauth2::{service_account, ClientSecretDefinition};
 
 /// Secrets used to access email account via IMAP.
-pub struct ImapSecrets {
+pub struct OauthSecrets {
     /// The path to the json file used for the OAUTH2 token cache. This file will be updated by
     /// this application when tokens expire and are refreshed.
     pub token_cache_path: PathBuf,
@@ -157,7 +157,7 @@ async fn initialize_service_account_key(
     })
 }
 
-impl ImapSecrets {
+impl OauthSecrets {
     /// Initializes secrets required for accessing IMAP.
     ///
     /// + If `CLIENT_SECRET` environment variable is set, the contents will be parsed, otherwise it
@@ -200,7 +200,7 @@ impl ImapSecrets {
 /// Secrets necessary for the operation of this application.
 pub struct Secrets {
     /// Secrets used for accessing the service email account via IMAP.
-    pub imap_secrets: ImapSecrets,
+    pub oauth_secrets: OauthSecrets,
     /// `admin` user's password hashed using bcrypt
     pub admin_password_hash: Option<SecretString>,
 }
@@ -211,7 +211,7 @@ impl Secrets {
     /// + `ADMIN_PASSWORD_HASH`: A `bcrypt` hash of the administrator password used to access the
     ///   application logs.
     pub async fn initialize(secrets_dir: &Path) -> eyre::Result<Self> {
-        let imap_secrets = ImapSecrets::initialize(secrets_dir)
+        let imap_secrets = OauthSecrets::initialize(secrets_dir)
             .await
             .wrap_err("Error initializing secrets for IMAP client")?;
 
@@ -253,7 +253,7 @@ impl Secrets {
         };
 
         Ok(Self {
-            imap_secrets,
+            oauth_secrets: imap_secrets,
             admin_password_hash,
         })
     }

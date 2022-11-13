@@ -17,9 +17,9 @@ use crate::{
     email,
     gis::Position,
     inreach,
-    oauth2::{AuthenticationFlow, ConsentRedirect, RedirectParameters},
+    oauth2::{AuthenticationFlow, ConsentRedirect, InstalledFlow, RedirectParameters},
     plain,
-    secrets::ImapSecrets,
+    secrets::OauthSecrets,
     task::run_retry_log_errors,
     time,
 };
@@ -322,41 +322,22 @@ where
     }
 }
 
-async fn receive_emails_impl(
+async fn receive_emails_impl<AUTH>(
     process_sender: Arc<Mutex<yaque::Sender>>,
-    imap_secrets: &ImapSecrets,
-    oauth_redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,
-    base_url: &url::Url,
+    oauth_flow: &AUTH,
     imap_username: &str,
     time: &dyn time::Port,
-) -> eyre::Result<()> {
+) -> eyre::Result<()>
+where
+    AUTH: AuthenticationFlow,
+{
     loop {
         tracing::debug!("Starting receiving emails job");
         let tls = async_native_tls::TlsConnector::new();
 
         let imap_domain = "imap.gmail.com";
 
-        let scopes = vec![
-            // https://developers.google.com/gmail/imap/xoauth2-protocol
-            oauth2::Scope::new("https://mail.google.com/".to_string()),
-        ];
-
-        let redirect_url = RedirectUrl::from_url(base_url.join("oauth2")?);
-        let flow = crate::oauth2::InstalledFlow::new(
-            ConsentRedirect::Http {
-                redirect_rx: oauth_redirect_rx.clone(),
-                url: redirect_url,
-            },
-            imap_secrets
-                .client_secret
-                .clone()
-                .ok_or_else(|| eyre::eyre!("Client secret has not been provided, and is required for Installed OAUTH2 flow"))?,
-            scopes,
-            imap_secrets.token_cache_path.clone(),
-            // DeviceAuthorizationUrl::new("https://oauth2.googleapis.com/device/code".into())?,
-        );
-
-        let access_token = flow
+        let access_token = oauth_flow
             .authenticate()
             .await
             .wrap_err("Error obtaining OAUTH2 access token")?;
@@ -405,27 +386,24 @@ async fn receive_emails_impl(
 
 /// This function spawns a task to receive emails via IMAP, and submit them for processing.
 #[tracing::instrument(skip_all)]
-pub async fn receive_emails(
-    process_sender: yaque::Sender,
+pub async fn receive_emails<AUTH>(
     shutdown_rx: broadcast::Receiver<()>,
-    oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
-    imap_secrets: &ImapSecrets,
-    base_url: &url::Url,
+    process_sender: yaque::Sender,
+    oauth_flow: Arc<AUTH>,
     imap_username: &str,
     time: &dyn time::Port,
-) {
+) where
+    AUTH: AuthenticationFlow,
+{
     let process_sender = Arc::new(Mutex::new(process_sender));
-    let oauth_redirect_rx = Arc::new(Mutex::new(oauth_redirect_rx));
     run_retry_log_errors(
         move || {
             let process_sender = process_sender.clone();
-            let oauth_redirect_rx = oauth_redirect_rx.clone();
+            let oauth_flow = oauth_flow.clone();
             async move {
                 receive_emails_impl(
                     process_sender,
-                    imap_secrets,
-                    oauth_redirect_rx,
-                    base_url,
+                    &*oauth_flow,
                     imap_username,
                     time,
                 )

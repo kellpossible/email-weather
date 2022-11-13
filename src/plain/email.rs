@@ -15,6 +15,8 @@ pub struct Received {
     pub from: email::Account,
     /// Identifier for the received message, will be used to specify the reply.
     pub message_id: Option<String>,
+    /// Subject of the received email.
+    pub subject: Option<String>,
 }
 
 impl receive::Received for Received {
@@ -31,11 +33,25 @@ impl ParseReceivedEmail for Received {
         let position = Position::new(-37.8259243, 145.2931204);
         let from = from_account(&message)?;
         let message_id = message_id(&message).map(|id| id.to_string());
+        let subject = match message.get_header("Subject") {
+            Some(subject_header) => match subject_header {
+                mail_parser::HeaderValue::Text(text) => Some(text.to_string()),
+                mail_parser::HeaderValue::Empty => None,
+                _ => {
+                    return Err(eyre::eyre!(
+                        "Unexpected subject header: {:?}",
+                        subject_header
+                    ))
+                }
+            },
+            None => None,
+        };
 
         Ok(Self {
             position,
             from,
             message_id,
+            subject,
         })
     }
 }

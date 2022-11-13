@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use email_weather::{
     fs,
     oauth2::RedirectParameters,
@@ -102,12 +104,16 @@ async fn main() -> eyre::Result<()> {
     let (reply_sender, reply_receiver) = yaque::channel(&reply_queue_path)
         .wrap_err_with(|| format!("Unable to create reply queue at {:?}", reply_queue_path))?;
 
-    let receive_join = tokio::spawn(receive_emails(
-        process_sender,
-        emails_receive_shutdown_rx,
-        oauth_redirect_rx,
-        &secrets.imap_secrets,
+    let oauth_flow = Arc::new(email_weather::oauth2::setup_flow(
+        &secrets.oauth_secrets,
         &options.base_url,
+        oauth_redirect_rx,
+    )?);
+
+    let receive_join = tokio::spawn(receive_emails(
+        emails_receive_shutdown_rx,
+        process_sender,
+        oauth_flow.clone(),
         options.email_account.email_str(),
         time,
     ));
@@ -123,6 +129,7 @@ async fn main() -> eyre::Result<()> {
         send_replies_shutdown_rx,
         http_client,
         &options.email_account,
+        oauth_flow,
         time,
     ));
 
