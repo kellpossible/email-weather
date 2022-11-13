@@ -56,8 +56,6 @@ async fn send_reply(
             // TODO send plain reply
             //https://docs.rs/lettre/latest/lettre/transport/smtp/authentication/enum.Mechanism.html
             //XOAUTH2
-            // lettre::Message::builder()
-            //     .from(lettre::message::Mailbox::from(reply.to)
             let builder = lettre::Message::builder()
                 .from(email_account.clone().into())
                 .to(reply.to.clone().into());

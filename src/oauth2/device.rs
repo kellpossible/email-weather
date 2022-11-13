@@ -14,13 +14,13 @@ use crate::oauth2::map_request_token_error;
 
 use super::{
     authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
-    StandardTokenResponse,
+    StandardTokenResponse, TokenCache,
 };
 
 pub struct DeviceFlow {
     client: BasicClient,
     scopes: Vec<Scope>,
-    token_cache_path: PathBuf,
+    token_cache: TokenCache,
 }
 
 impl DeviceFlow {
@@ -40,10 +40,12 @@ impl DeviceFlow {
         .set_device_authorization_url(device_authorization_url)
         .set_auth_type(oauth2::AuthType::RequestBody);
 
+        let token_cache = TokenCache::new(token_cache_path);
+
         Self {
             client,
             scopes,
-            token_cache_path: token_cache_path.into(),
+            token_cache,
         }
     }
 }
@@ -51,9 +53,10 @@ impl DeviceFlow {
 #[async_trait]
 impl AuthenticationFlow for DeviceFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
+        let mut token_cache = self.token_cache.lock().await;
         authenticate_with_token_cache(
             self.scopes.clone(),
-            &self.token_cache_path,
+            &mut token_cache,
             |scopes| obtain_new_token(&self.client, scopes),
             |rt, scopes| refresh_token(&self.client, rt, scopes),
         )

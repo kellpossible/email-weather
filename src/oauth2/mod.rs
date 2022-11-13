@@ -1,4 +1,9 @@
-use std::{path::Path, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use axum::{
@@ -15,7 +20,7 @@ use oauth2::{
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, MutexGuard};
 
 mod device;
 mod installed;
@@ -107,13 +112,91 @@ pub struct InstalledClientSecretDefinition {
 type StandardTokenResponse =
     oauth2::StandardTokenResponse<oauth2::EmptyExtraTokenFields, oauth2::basic::BasicTokenType>;
 
-#[derive(Serialize, Deserialize)]
 struct TokenCache {
+    /// Path to token cache file.
+    path: PathBuf,
+    lock: Mutex<()>,
+}
+
+impl TokenCache {
+    fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            lock: Mutex::new(()),
+        }
+    }
+
+    async fn lock<'a>(&'a self) -> TokenCacheGuard<'a> {
+        TokenCacheGuard {
+            path: &self.path,
+            guard: self.lock.lock().await,
+        }
+    }
+}
+
+impl std::fmt::Debug for TokenCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenCache")
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+/// Organises simultaneous access to the token cache, to prevent data races.
+/// Obtain this guard using [`TokenCache::lock()`].
+struct TokenCacheGuard<'a> {
+    path: &'a Path,
+    guard: MutexGuard<'a, ()>,
+}
+
+impl std::fmt::Debug for TokenCacheGuard<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenCacheGuard")
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+impl TokenCacheGuard<'_> {
+    fn exists(&self) -> bool {
+        self.path.exists()
+    }
+
+    async fn read(&self) -> eyre::Result<TokenCacheData> {
+        let token_cache_string = tokio::fs::read_to_string(self.path).await?;
+        let mut token_cache: TokenCacheData = serde_json::from_str(&token_cache_string)?;
+
+        // Update the expires_in field
+        token_cache.response.set_expires_in(None);
+
+        Ok(token_cache)
+    }
+
+    async fn write(&mut self, data: &TokenCacheData) -> eyre::Result<()> {
+        let overwritten = self.path.exists();
+        let token_cache_json =
+            serde_json::to_string_pretty(data).wrap_err("Error serializing token cache")?;
+        tokio::fs::write(self.path, &token_cache_json)
+            .await
+            .wrap_err_with(|| format!("Error writing token cache to {:?}", self.path))?;
+
+        if overwritten {
+            tracing::debug!("Overwritten token cache {:?}", self.path);
+        } else {
+            tracing::debug!("Wrote new token cache {:?}", self.path);
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TokenCacheData {
     response: StandardTokenResponse,
     expires_time: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-impl TokenCache {
+impl TokenCacheData {
     fn try_new(response: StandardTokenResponse) -> eyre::Result<Self> {
         let expires_time = Option::<eyre::Result<_>>::transpose(
             response
@@ -135,33 +218,6 @@ impl TokenCache {
                 *expires_time - now
             }
         })
-    }
-
-    async fn read(path: &Path) -> eyre::Result<Self> {
-        let token_cache_string = tokio::fs::read_to_string(path).await?;
-        let mut token_cache: Self = serde_json::from_str(&token_cache_string)?;
-
-        // Update the expires_in field
-        token_cache.response.set_expires_in(None);
-
-        Ok(token_cache)
-    }
-
-    async fn write(&self, path: &Path) -> eyre::Result<()> {
-        let overwritten = path.exists();
-        let token_cache_json =
-            serde_json::to_string_pretty(&self).wrap_err("Error serializing token cache")?;
-        tokio::fs::write(path, &token_cache_json)
-            .await
-            .wrap_err_with(|| format!("Error writing token cache to {:?}", path))?;
-
-        if overwritten {
-            tracing::debug!("Overwritten token cache {:?}", path);
-        } else {
-            tracing::debug!("Wrote new token cache {:?}", path);
-        }
-
-        Ok(())
     }
 }
 
@@ -216,7 +272,7 @@ pub trait AuthenticationFlow {
 
 async fn authenticate_with_token_cache<'a, Fut1, Fut2>(
     scopes: Vec<Scope>,
-    token_cache_path: &Path,
+    token_cache: &mut TokenCacheGuard<'_>,
     obtain_new_token: impl FnOnce(Vec<Scope>) -> Fut1,
     refresh_token: impl FnOnce(RefreshToken, Vec<Scope>) -> Fut2,
 ) -> eyre::Result<AccessToken>
@@ -224,23 +280,24 @@ where
     Fut1: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
     Fut2: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
 {
-    let token_cache: TokenCache = if token_cache_path.exists() {
+    let token_cache_data: TokenCacheData = if token_cache.exists() {
         tracing::debug!(
-            "Token cache file {:?} exists, attempting to read from file",
-            token_cache_path
+            "Token cache {:?} exists, attempting to read from file",
+            token_cache
         );
-        let token_cache = TokenCache::read(token_cache_path).await.wrap_err_with(|| {
-            format!("Error reading token cache from file {:?}", token_cache_path)
-        })?;
+        let token_cache_data = token_cache
+            .read()
+            .await
+            .wrap_err_with(|| format!("Error reading token cache {:?}", token_cache))?;
 
-        let token_expired: bool = token_cache
+        let token_expired: bool = token_cache_data
             .expires_time
             .map(|expires_time| expires_time < chrono::Utc::now())
             .unwrap_or(false);
 
         if token_expired {
             tracing::debug!("Token in cache has expired.");
-            let token_response = if let Some(token) = token_cache.response.refresh_token() {
+            let token_response = if let Some(token) = token_cache_data.response.refresh_token() {
                 tracing::debug!("Using refresh token to automatically obtain a new token");
                 refresh_token(token.clone(), scopes.clone())
                     .await
@@ -251,26 +308,26 @@ where
                     .await
                     .wrap_err("Error while obtaining new token")?
             };
-            let token_cache = TokenCache::try_new(token_response)?;
-            token_cache.write(token_cache_path).await?;
-            token_cache
+            let token_cache_data = TokenCacheData::try_new(token_response)?;
+            token_cache.write(&token_cache_data).await?;
+            token_cache_data
         } else {
-            token_cache
+            token_cache_data
         }
     } else {
         tracing::debug!(
-            "Token cache file {:?} does not exist, obtaining new token",
-            token_cache_path
+            "Token cache {:?} does not exist, obtaining new token",
+            token_cache
         );
         let token_response = obtain_new_token(scopes.clone()).await?;
         tracing::debug!("Successfully obtained new token!");
-        let token_cache = TokenCache::try_new(token_response)?;
-        token_cache.write(token_cache_path).await?;
-        token_cache
+        let token_cache_data = TokenCacheData::try_new(token_response)?;
+        token_cache.write(&token_cache_data).await?;
+        token_cache_data
     };
 
-    if let Some(expires_in) = token_cache.expires_in_now() {
-        let refresh_message = if token_cache.response.refresh_token().is_some() {
+    if let Some(expires_in) = token_cache_data.expires_in_now() {
+        let refresh_message = if token_cache_data.response.refresh_token().is_some() {
             "It can be refreshed using the cached refresh token."
         } else {
             "It cannot be refreshed, the cache does not contain a refresh token, a new token will be need obtained upon expire."
@@ -284,7 +341,7 @@ where
         tracing::warn!("Token has no expiration time")
     }
 
-    Ok(token_cache.response.access_token().clone())
+    Ok(token_cache_data.response.access_token().clone())
 }
 
 #[derive(Debug, Deserialize)]

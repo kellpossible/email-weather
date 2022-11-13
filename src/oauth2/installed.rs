@@ -7,18 +7,19 @@ use oauth2::{
     basic::BasicClient, AccessToken, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope,
     TokenResponse,
 };
+use tokio::sync::Mutex;
 
 use super::{
     authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
-    ConsentRedirect, StandardTokenResponse, TokenCache,
+    ConsentRedirect, StandardTokenResponse, TokenCache, TokenCacheData,
 };
 
 /// Used for the "installed" authentication flow.
 pub struct InstalledFlow {
     redirect: ConsentRedirect,
     scopes: Vec<Scope>,
-    token_cache_path: PathBuf,
     client: BasicClient,
+    token_cache: TokenCache,
 }
 
 impl InstalledFlow {
@@ -27,7 +28,7 @@ impl InstalledFlow {
         redirect: ConsentRedirect,
         client_secret: ClientSecretDefinition,
         scopes: Vec<Scope>,
-        token_cache_path: PathBuf,
+        token_cache_path: impl Into<PathBuf>,
     ) -> Self {
         let client = BasicClient::new(
             client_secret.client_id().clone(),
@@ -36,11 +37,13 @@ impl InstalledFlow {
             Some(client_secret.token_url().clone()),
         );
 
+        let token_cache = TokenCache::new(token_cache_path);
+
         Self {
             redirect,
             client,
             scopes,
-            token_cache_path,
+            token_cache,
         }
     }
 
@@ -136,17 +139,14 @@ impl InstalledFlow {
 #[async_trait]
 impl AuthenticationFlow for InstalledFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
-        if self.token_cache_path.exists() {
-            let token_cache = TokenCache::read(&self.token_cache_path)
+        let mut token_cache = self.token_cache.lock().await;
+        if token_cache.exists() {
+            let data = token_cache
+                .read()
                 .await
-                .wrap_err_with(|| {
-                    format!(
-                        "Error reading token cache from file {:?}",
-                        self.token_cache_path
-                    )
-                })?;
-            if token_cache.response.refresh_token().is_none() {
-                if let Some(expires_in) = token_cache.expires_in_now() {
+                .wrap_err_with(|| format!("Error reading token cache {:?}", token_cache))?;
+            if data.response.refresh_token().is_none() {
+                if let Some(expires_in) = data.expires_in_now() {
                     tracing::warn!(
                         "No refresh token available, current token expires after: {}",
                         expires_in
@@ -156,7 +156,7 @@ impl AuthenticationFlow for InstalledFlow {
         }
         authenticate_with_token_cache(
             self.scopes.clone(),
-            &self.token_cache_path,
+            &mut token_cache,
             |scopes| self.obtain_new_token(scopes),
             |rt, scopes| refresh_token(&self.client, rt, scopes),
         )

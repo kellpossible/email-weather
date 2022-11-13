@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::{authenticate_with_token_cache, AuthenticationFlow, StandardTokenResponse};
+use super::{authenticate_with_token_cache, AuthenticationFlow, StandardTokenResponse, TokenCache};
 use async_trait::async_trait;
 use chrono::serde::ts_seconds::serialize as to_ts;
 use color_eyre::Help;
@@ -139,16 +139,16 @@ async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<Standar
 pub struct ServiceAccountFlow {
     key: Key,
     scopes: Vec<Scope>,
-    token_cache_path: PathBuf,
+    token_cache: TokenCache,
 }
 
 impl ServiceAccountFlow {
     /// Create a new [`ServiceAccountFlow`].
-    pub fn new(key: Key, scopes: Vec<Scope>, token_cache_path: PathBuf) -> Self {
+    pub fn new(key: Key, scopes: Vec<Scope>, token_cache_path: impl Into<PathBuf>) -> Self {
         Self {
             key,
             scopes,
-            token_cache_path,
+            token_cache: TokenCache::new(token_cache_path),
         }
     }
 }
@@ -156,9 +156,11 @@ impl ServiceAccountFlow {
 #[async_trait]
 impl AuthenticationFlow for ServiceAccountFlow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
+        let mut token_cache = self.token_cache.lock().await;
+
         authenticate_with_token_cache(
             self.scopes.clone(),
-            &self.token_cache_path,
+            &mut token_cache,
             |scopes| obtain_new_token(&self.key, scopes),
             // Refresh involves just obtaining another token (no refresh token involved).
             |_, scopes| obtain_new_token(&self.key, scopes),
