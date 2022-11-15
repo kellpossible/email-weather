@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use chumsky::{
     prelude::Simple,
-    primitive::{end, filter},
+    primitive::{end, just},
     text::{self, TextParser},
     Parser,
 };
@@ -32,16 +32,31 @@ impl ForecastRequest {
 /// A parsed [`ForecastRequest`], with parsing errors stored alongside.
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct ParsedForecastRequest {
+    /// The parsed request.
     pub request: ForecastRequest,
+    /// Errors encountered while parsing the request.
     pub errors: Vec<String>,
 }
 
 impl ParsedForecastRequest {
     /// Parse request from a string.
     pub fn parse(request_string: &str) -> Self {
-        tracing::debug!("Parsing request string: {}", request_string);
         let (request, errors) = ForecastRequest::parse(request_string);
         let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
+
+        if !errors.is_empty() {
+            let error = errors
+                .iter()
+                .enumerate()
+                .map(|(i, e)| format!("Error {}: {}", i, e))
+                .collect::<Vec<String>>()
+                .join("\n");
+            tracing::warn!(
+                "Errors while parsing request string {:?}:\n{}",
+                request_string,
+                error
+            )
+        }
 
         Self { request, errors }
     }
@@ -68,33 +83,19 @@ fn request_parser() -> impl Parser<char, ForecastRequest, Error = Simple<char>> 
 /// + `-12345`
 fn f32_parser() -> impl Parser<char, f32, Error = Simple<char>> {
     // Left of the decimal point.
-    let left = text::int::<char, Simple<char>>(10).try_map(|s, span| {
-        s.parse::<f32>()
-            .map_err(|e| Simple::custom(span, format!("{}", e)))
-    });
+    let left = text::digits::<char, Simple<char>>(10);
 
     // Right of the decimal point.
-    let right = text::int::<char, Simple<char>>(10).try_map(|s, span| {
-        let z = s.len();
-        s.parse::<f32>()
-            .map(|n| n * 10.0f32.powi(-1 * z as i32))
-            .map_err(|e| Simple::custom(span, format!("{}", e)))
-    });
+    let right = text::digits::<char, Simple<char>>(10);
 
-    // Negative `-` sign.
-    let neg = filter(|c: &char| c == &'-').or_not().map(|o| o.is_some());
-
-    neg.then(
-        left.then(
-            filter(|c: &char| c == &'.')
-                .ignored()
-                .then(right)
-                .or_not()
-                .map(|o| o.map(|(_ignored, right)| right)),
-        )
-        .map(|(left, right)| right.map(|right| right + left).unwrap_or(left)),
-    )
-    .map(|(neg, num)| if neg { -num } else { num })
+    just('-')
+        .or_not()
+        .chain::<char, _, _>(left)
+        .chain::<char, _, _>(just('.').chain(right).or_not().flatten())
+        .collect::<String>()
+        .from_str()
+        .unwrapped()
+        .labelled("number")
 }
 
 fn position_parser() -> impl Parser<char, Position, Error = Simple<char>> {
@@ -112,7 +113,7 @@ fn position_parser() -> impl Parser<char, Position, Error = Simple<char>> {
                 Ok(latitude)
             }
         })
-        .then_ignore(filter(|c: &char| c == &',').padded())
+        .then_ignore(just(',').padded())
         .then(f32_parser().try_map(|longitude, span| {
             if longitude > 180.0 || longitude < -180.0 {
                 return Err(Simple::custom(
@@ -127,6 +128,7 @@ fn position_parser() -> impl Parser<char, Position, Error = Simple<char>> {
             }
         }))
         .map(|(latitude, longitude)| Position::new(latitude, longitude))
+        .labelled("position")
 }
 
 /// Convert parsing errors to an eyre formatted error.
@@ -196,6 +198,8 @@ mod test {
         assert_eq!(Position::new(42.245, -100.1), p);
         let p = position_parser().parse("42,100").unwrap();
         assert_eq!(Position::new(42.0, 100.0), p);
+        let p = position_parser().parse("53.035,158.654").unwrap();
+        assert_eq!(Position::new(53.035, 158.654), p);
     }
 
     #[test]

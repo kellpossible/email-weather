@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     receive::{Received, ReceivedKind},
-    reply::{InReach, Plain, Reply},
+    reply::Reply,
     task::run_retry_log_errors,
     time,
 };
@@ -94,7 +94,7 @@ async fn process_email(
     let position = request
         .position
         .or(received_email.position())
-        .ok_or_else(|| eyre::eyre!("No forecast position specified"))?;
+        .ok_or_else(|| ProcessEmailError::NoPosition)?;
     let forecast_parameters = ForecastParameters::builder()
         .latitude(position.latitude)
         .longitude(position.longitude)
