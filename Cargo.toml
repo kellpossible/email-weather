@@ -11,6 +11,7 @@ async-imap = { version = "0.6.0", default-features = false, features = ["runtime
 async-native-tls = { version = "0.4", default-features = false, features = ["runtime-tokio"] }
 ansi-to-html = { version = "0.1", features = ["lazy-init"] }
 bytesize = "1.1"
+chumsky = "0.8"
 oauth2 = "4.2"
 axum = "0.5"
 base64 = "0.13"

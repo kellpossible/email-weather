@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 use crate::{
-    email,
     gis::Position,
     receive::{self, text_body, ParseReceivedEmail},
 };
@@ -22,10 +21,16 @@ pub struct Received {
     pub referral_url: url::Url,
     /// The position of the inreach device at the time that the message was sent.
     pub position: Position,
+    /// Body of the user specified message.
+    pub message_body: String,
 }
 
 impl receive::Received for Received {
-    fn position(&self) -> Position {
+    fn position(&self) -> Option<Position> {
+        Some(self.position.clone())
+    }
+
+    fn request_message(&self) -> &str {
         todo!()
     }
 }
@@ -37,7 +42,7 @@ static MESSAGE_FROM_RE: Lazy<Regex> =
 
 #[derive(PartialEq)]
 enum ParseState {
-    ViewLocation,
+    MessageBody,
     ReferralUrl,
     MessageFrom,
     Done,
@@ -58,15 +63,30 @@ impl Received {
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
         let mut longitude: Option<f32> = None;
-        let mut parse_state = ParseState::ViewLocation;
+        let mut parse_state = ParseState::MessageBody;
+        let mut message_body = String::with_capacity(body.len());
 
         for line in body.split('\n') {
             match parse_state {
-                ParseState::ViewLocation => {
+                ParseState::MessageBody => {
                     if let Some(c) = (*VIEW_LOCATION_RE).captures(line.trim()) {
                         let name_match = c.get(1).unwrap();
                         from_name = Some(name_match.as_str().to_string());
                         parse_state = ParseState::ReferralUrl;
+                        if message_body.len() > 0 {
+                            // Remove last empty newline
+                            if message_body.chars().last() == Some('\n') {
+                                message_body.remove(
+                                    message_body
+                                        .char_indices()
+                                        .last()
+                                        .expect("Expected there to be a last character")
+                                        .0,
+                                );
+                            }
+                        }
+                    } else {
+                        message_body.push_str(line);
                     }
                 }
                 ParseState::ReferralUrl => {
@@ -111,6 +131,7 @@ impl Received {
             from_name: from_name.unwrap(),
             referral_url: referral_url.unwrap(),
             position: Position::new(latitude.unwrap(), longitude.unwrap()),
+            message_body,
         })
     }
 }
@@ -143,5 +164,6 @@ learn more, visit http://explore.garmin.com/inreach.
         );
         assert_eq!(-44.689529, email.position.latitude);
         assert_eq!(169.132354, email.position.longitude);
+        assert_eq!("Test", email.message_body);
     }
 }

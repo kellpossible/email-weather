@@ -15,6 +15,7 @@ pub mod process;
 pub mod receive;
 pub mod reply;
 pub mod reporting;
+pub mod request;
 pub mod retry;
 pub mod secrets;
 pub mod serve_http;

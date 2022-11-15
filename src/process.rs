@@ -84,7 +84,8 @@ async fn process_emails_impl(
         let received = process_receiver.recv().await?;
         let received_email: ReceivedKind = serde_json::from_slice(&*received)?;
 
-        let position = received_email.position();
+        // TODO: parse message body
+        let position = received_email.position().unwrap();
         let forecast_parameters = ForecastParameters::builder()
             .latitude(position.latitude)
             .longitude(position.longitude)

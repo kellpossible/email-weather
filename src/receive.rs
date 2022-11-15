@@ -5,11 +5,11 @@ use std::{borrow::Cow, sync::Arc};
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
-use oauth2::{AccessToken, RedirectUrl};
+use oauth2::AccessToken;
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{broadcast, mpsc, Mutex},
+    sync::{broadcast, Mutex},
 };
 use tracing::Instrument;
 
@@ -17,17 +17,18 @@ use crate::{
     email,
     gis::Position,
     inreach,
-    oauth2::{AuthenticationFlow, ConsentRedirect, InstalledFlow, RedirectParameters},
+    oauth2::AuthenticationFlow,
     plain,
-    secrets::OauthSecrets,
     task::run_retry_log_errors,
     time,
 };
 
 /// An email received via IMAP.
 pub trait Received {
-    /// Position (latitude, longitude).
-    fn position(&self) -> Position;
+    /// Geographical position of sender of the message (if available).
+    fn position(&self) -> Option<Position>;
+    /// The subset of the received message containing the request specification.
+    fn request_message(&self) -> &str;
 }
 
 /// Sum type of all possible [`Email`]s that can be received and parsed via IMAP.
@@ -39,14 +40,21 @@ pub enum ReceivedKind {
     Plain(plain::email::Received),
 }
 
+/// Error that occurs while parsing a received email.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseReceivedEmailError {
+    /// The email being parsed was intentionally rejected.
     #[error("Rejected email because: {reason}")]
-    Rejected { reason: Cow<'static, str> },
+    Rejected { 
+        /// The reason why the email was rejected.
+        reason: Cow<'static, str>
+    },
+    /// An unexpected error occurred during parsing.
     #[error(transparent)]
     Unexpected(#[from] eyre::Error),
 }
 
+/// Parse a received email.
 pub trait ParseReceivedEmail: Sized {
     /// Error produced while parsing the received email.
     type Err;
@@ -57,12 +65,9 @@ pub trait ParseReceivedEmail: Sized {
 }
 
 pub(crate) fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
-    tracing::debug!("{:?}", message.get_headers());
     let text_body = message
         .get_text_body(0)
         .ok_or_else(|| eyre::eyre!("No text body for message"))?;
-
-    tracing::debug!("text_body: {}", text_body);
 
     Ok(text_body)
 }
@@ -103,13 +108,8 @@ impl ParseReceivedEmail for ReceivedKind {
             "no.reply.inreach@garmin.com" => {
                 Self::Inreach(inreach::email::Received::parse_email(message)?)
             }
-            // TODO: use a whitelist from options.
-            "l.frisken@gmail.com" => Self::Plain(plain::email::Received::parse_email(message)?),
-            _ => {
-                return Err(ParseReceivedEmailError::Rejected {
-                    reason: "Not from a whitelisted address".into(),
-                });
-            }
+            // TODO: use a whitelist from options as per #14
+            _ => Self::Plain(plain::email::Received::parse_email(message)?),
         };
 
         Ok(email)
@@ -117,10 +117,17 @@ impl ParseReceivedEmail for ReceivedKind {
 }
 
 impl Received for ReceivedKind {
-    fn position(&self) -> Position {
+    fn position(&self) -> Option<Position> {
         match self {
             ReceivedKind::Inreach(email) => email.position(),
             ReceivedKind::Plain(email) => email.position(),
+        }
+    }
+
+    fn request_message(&self) -> &str {
+        match self {
+            ReceivedKind::Inreach(email) => email.request_message(),
+            ReceivedKind::Plain(email) => email.request_message(),
         }
     }
 }
