@@ -9,10 +9,11 @@ use std::borrow::Cow;
 use crate::{
     gis::Position,
     receive::{self, text_body, ParseReceivedEmail},
+    request::{ForecastRequest, ParsedForecastRequest},
 };
 
 /// An email received from an inreach device.
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Received {
     /// The name of the person who sent the message.
     /// TODO: remove as part of anonymizing #12
@@ -21,8 +22,8 @@ pub struct Received {
     pub referral_url: url::Url,
     /// The position of the inreach device at the time that the message was sent.
     pub position: Position,
-    /// Body of the user specified message.
-    pub message_body: String,
+    /// Weather forecast request.
+    pub forecast_request: ParsedForecastRequest,
 }
 
 impl receive::Received for Received {
@@ -30,7 +31,7 @@ impl receive::Received for Received {
         Some(self.position.clone())
     }
 
-    fn request_message(&self) -> &str {
+    fn forecast_request(&self) -> &ParsedForecastRequest {
         todo!()
     }
 }
@@ -127,11 +128,13 @@ impl Received {
             eyre::bail!("Unable to parse email text as a complete inreach message")
         }
 
+        let forecast_request = ParsedForecastRequest::parse(&message_body);
+
         Ok(Self {
             from_name: from_name.unwrap(),
             referral_url: referral_url.unwrap(),
             position: Position::new(latitude.unwrap(), longitude.unwrap()),
-            message_body,
+            forecast_request,
         })
     }
 }
@@ -141,7 +144,7 @@ mod test {
     use super::Received;
 
     const TEST_BODY: &'static str = r#"
-Test
+-37.8245005,145.3032913
 
 View the location or send a reply to Luke Frisken:
 https://aus.explore.garmin.com/textmessage/txtmsg?extId=000aa0e6-8e00-2501-000d-3aa730600000&adr=email.weather.service%40gmail.com
@@ -157,13 +160,24 @@ learn more, visit http://explore.garmin.com/inreach.
     fn test_parse_email() {
         let email = Received::parse(TEST_BODY.into()).unwrap();
 
-        assert_eq!("Luke Frisken", email.from_name);
-        assert_eq!(
-            "https://aus.explore.garmin.com/textmessage/txtmsg?extId=000aa0e6-8e00-2501-000d-3aa730600000&adr=email.weather.service%40gmail.com",
-            email.referral_url.as_str()
-        );
-        assert_eq!(-44.689529, email.position.latitude);
-        assert_eq!(169.132354, email.position.longitude);
-        assert_eq!("Test", email.message_body);
+        insta::assert_json_snapshot!(email, @r###"
+        {
+          "from_name": "Luke Frisken",
+          "referral_url": "https://aus.explore.garmin.com/textmessage/txtmsg?extId=000aa0e6-8e00-2501-000d-3aa730600000&adr=email.weather.service%40gmail.com",
+          "position": {
+            "latitude": -44.68953,
+            "longitude": 169.13235
+          },
+          "forecast_request": {
+            "request": {
+              "position": {
+                "latitude": -37.8245,
+                "longitude": 145.30328
+              }
+            },
+            "errors": []
+          }
+        }
+        "###);
     }
 }

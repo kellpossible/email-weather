@@ -75,6 +75,163 @@ impl Display for WindDirection {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+enum ProcessEmailError {
+    #[error("No forecast position specified")]
+    NoPosition,
+    #[error(transparent)]
+    Unexpected(#[from] eyre::Error),
+    #[error("A networking error occurred")]
+    Network,
+}
+
+async fn process_email(
+    http_client: &reqwest::Client,
+    received_email: &ReceivedKind,
+) -> Result<Reply, ProcessEmailError> {
+    // TODO: parse message body
+    let request = &received_email.forecast_request().request;
+    let position = request
+        .position
+        .or(received_email.position())
+        .ok_or_else(|| eyre::eyre!("No forecast position specified"))?;
+    let forecast_parameters = ForecastParameters::builder()
+        .latitude(position.latitude)
+        .longitude(position.longitude)
+        .hourly_entry(HourlyVariable::FreezingLevelHeight)
+        .hourly_entry(HourlyVariable::WindSpeed10m)
+        .hourly_entry(HourlyVariable::WindDirection10m)
+        .hourly_entry(HourlyVariable::WeatherCode)
+        .hourly_entry(HourlyVariable::Precipitation)
+        .timezone(TimeZone::Auto)
+        .build();
+
+    tracing::debug!(
+        "Obtaining forecast for forecast parameters {}",
+        serde_json::to_string_pretty(&forecast_parameters).map_err(eyre::Error::from)?
+    );
+    let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
+        .await
+        .wrap_err("Error obtaining forecast")?;
+    tracing::info!("Successfully obtained forecast");
+
+    let hourly: Hourly = forecast
+        .hourly
+        .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
+    let time: &[chrono::NaiveDateTime] = &hourly.time;
+
+    let freezing_level_height: &[f32] = &hourly
+        .freezing_level_height
+        .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
+    let wind_speed_10m: &[f32] = &hourly
+        .wind_speed_10m
+        .ok_or_else(|| eyre::eyre!("expected wind_speed_10m to be present"))?;
+    let wind_direction_10m: &[f32] = &hourly
+        .wind_direction_10m
+        .ok_or_else(|| eyre::eyre!("expected wind_direction_10m to be present"))?;
+    let weather_code: &[WeatherCode] = &hourly
+        .weather_code
+        .ok_or_else(|| eyre::eyre!("expected weather_code to be present"))?;
+    let precipitation: &[f32] = &hourly
+        .precipitation
+        .ok_or_else(|| eyre::eyre!("expected precipitation to be present"))?;
+
+    if [
+        time.len(),
+        freezing_level_height.len(),
+        wind_speed_10m.len(),
+        wind_direction_10m.len(),
+        weather_code.len(),
+        precipitation.len(),
+    ]
+    .into_iter()
+    .collect::<HashSet<usize>>()
+    .len()
+        != 1
+    {
+        return Err(eyre::eyre!("forecast hourly array lengths don't match").into());
+    }
+
+    let mut messages: Vec<String> = Vec::new();
+    let utc_now: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();
+    let offset = chrono::TimeZone::offset_from_utc_datetime(&forecast.timezone, &utc_now);
+    let current_local_time: chrono::NaiveDateTime =
+        chrono::TimeZone::from_utc_datetime(&forecast.timezone, &utc_now).naive_local();
+    tracing::debug!("current local time: {}", current_local_time);
+    let total_offset: chrono::Duration = offset.base_utc_offset() + offset.dst_offset();
+
+    if total_offset.num_seconds() != forecast.utc_offset_seconds {
+        tracing::warn!(
+            "Reported timezone offsets don't match {} != {}",
+            total_offset.num_seconds(),
+            forecast.utc_offset_seconds
+        );
+    }
+
+    let formatted_offset: String = if total_offset.is_zero() {
+        "GMT".to_string()
+    } else {
+        let formatted_duration = format!(
+            "{:02}:{:02}",
+            total_offset.num_hours(),
+            total_offset.num_minutes() % 60
+        );
+        if total_offset > chrono::Duration::zero() {
+            format!("+{}", formatted_duration)
+        } else {
+            format!("-{}", formatted_duration)
+        }
+    };
+
+    messages.push(format!("Tz{} E{:.0}", formatted_offset, forecast.elevation));
+
+    // Skip times that are after the current local time.
+    let start_i: usize = time.iter().enumerate().fold(0, |acc, (i, local_time)| {
+        if current_local_time > *local_time {
+            usize::min(i + 1, time.len() - 1)
+        } else {
+            acc
+        }
+    });
+
+    let mut i = start_i;
+    let mut acc_precipitation: f32 = 0.0;
+    while i <= usize::min(time.len() - 1, i + 48) {
+        acc_precipitation += precipitation[i];
+        if (i - start_i) % 6 == 0 {
+            let formatted_time = time[i].format("%dT%H");
+            messages.push(format!(
+                "{} C{:.0} F{:.0} W{:.0}@{} P{:.0}",
+                formatted_time,
+                weather_code[i] as u8,
+                freezing_level_height[i].round(),
+                (wind_speed_10m[i] / 10.0).round(),
+                (wind_direction_10m[i] / 10.0).round(),
+                acc_precipitation.round(),
+            ));
+            acc_precipitation = 0.0;
+        }
+        i += 1;
+    }
+
+    tracing::info!("Sending reply for email {:?}", received_email);
+
+    let mut message: String = String::new();
+    for (i, m) in messages.into_iter().enumerate() {
+        if message.len() + m.len() > 160 {
+            break;
+        }
+
+        if i > 0 {
+            message.push('\n');
+        }
+        message.push_str(&m);
+    }
+    tracing::info!("message (len: {}):\n{}", message.len(), message);
+
+    Ok(Reply::from_received(received_email.clone(), message))
+}
+
 async fn process_emails_impl(
     process_receiver: &mut yaque::Receiver,
     reply_sender: &mut yaque::Sender,
@@ -84,155 +241,23 @@ async fn process_emails_impl(
         let received = process_receiver.recv().await?;
         let received_email: ReceivedKind = serde_json::from_slice(&*received)?;
 
-        // TODO: parse message body
-        let position = received_email.position().unwrap();
-        let forecast_parameters = ForecastParameters::builder()
-            .latitude(position.latitude)
-            .longitude(position.longitude)
-            .hourly_entry(HourlyVariable::FreezingLevelHeight)
-            .hourly_entry(HourlyVariable::WindSpeed10m)
-            .hourly_entry(HourlyVariable::WindDirection10m)
-            .hourly_entry(HourlyVariable::WeatherCode)
-            .hourly_entry(HourlyVariable::Precipitation)
-            .timezone(TimeZone::Auto)
-            .build();
-
-        tracing::debug!(
-            "Obtaining forecast for forecast parameters {}",
-            serde_json::to_string_pretty(&forecast_parameters)?
-        );
-        let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
-            .await
-            .wrap_err("Error obtaining forecast")?;
-        tracing::info!("Successfully obtained forecast");
-
-        let hourly: Hourly = forecast
-            .hourly
-            .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
-        let time: &[chrono::NaiveDateTime] = &hourly.time;
-
-        let freezing_level_height: &[f32] = &hourly
-            .freezing_level_height
-            .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
-        let wind_speed_10m: &[f32] = &hourly
-            .wind_speed_10m
-            .ok_or_else(|| eyre::eyre!("expected wind_speed_10m to be present"))?;
-        let wind_direction_10m: &[f32] = &hourly
-            .wind_direction_10m
-            .ok_or_else(|| eyre::eyre!("expected wind_direction_10m to be present"))?;
-        let weather_code: &[WeatherCode] = &hourly
-            .weather_code
-            .ok_or_else(|| eyre::eyre!("expected weather_code to be present"))?;
-        let precipitation: &[f32] = &hourly
-            .precipitation
-            .ok_or_else(|| eyre::eyre!("expected precipitation to be present"))?;
-
-        if [
-            time.len(),
-            freezing_level_height.len(),
-            wind_speed_10m.len(),
-            wind_direction_10m.len(),
-            weather_code.len(),
-            precipitation.len(),
-        ]
-        .into_iter()
-        .collect::<HashSet<usize>>()
-        .len()
-            != 1
-        {
-            eyre::bail!("forecast hourly array lengths don't match")
-        }
-
-        let mut messages: Vec<String> = Vec::new();
-        let utc_now: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();
-        let offset = chrono::TimeZone::offset_from_utc_datetime(&forecast.timezone, &utc_now);
-        let current_local_time: chrono::NaiveDateTime =
-            chrono::TimeZone::from_utc_datetime(&forecast.timezone, &utc_now).naive_local();
-        tracing::debug!("current local time: {}", current_local_time);
-        let total_offset: chrono::Duration = offset.base_utc_offset() + offset.dst_offset();
-
-        if total_offset.num_seconds() != forecast.utc_offset_seconds {
-            tracing::warn!(
-                "Reported timezone offsets don't match {} != {}",
-                total_offset.num_seconds(),
-                forecast.utc_offset_seconds
-            );
-        }
-
-        let formatted_offset: String = if total_offset.is_zero() {
-            "GMT".to_string()
-        } else {
-            let formatted_duration = format!(
-                "{:02}:{:02}",
-                total_offset.num_hours(),
-                total_offset.num_minutes() % 60
-            );
-            if total_offset > chrono::Duration::zero() {
-                format!("+{}", formatted_duration)
-            } else {
-                format!("-{}", formatted_duration)
-            }
+        let reply = match process_email(&http_client, &received_email).await {
+            Ok(reply) => reply,
+            Err(error) => match &error {
+                ProcessEmailError::NoPosition => Reply::from_received(
+                    received_email,
+                    "No forecast position specified".to_string(),
+                ),
+                ProcessEmailError::Unexpected(error) => {
+                    tracing::error!("Unexpected error occurred: {}", error);
+                    Reply::from_received(
+                        received_email,
+                        "An error occurred while processing your request".to_string(),
+                    )
+                }
+                ProcessEmailError::Network => return Err(error.into()),
+            },
         };
-
-        messages.push(format!("Tz{} E{:.0}", formatted_offset, forecast.elevation));
-
-        // Skip times that are after the current local time.
-        let start_i: usize = time.iter().enumerate().fold(0, |acc, (i, local_time)| {
-            if current_local_time > *local_time {
-                usize::min(i + 1, time.len() - 1)
-            } else {
-                acc
-            }
-        });
-
-        let mut i = start_i;
-        let mut acc_precipitation: f32 = 0.0;
-        while i <= usize::min(time.len() - 1, i + 48) {
-            acc_precipitation += precipitation[i];
-            if (i - start_i) % 6 == 0 {
-                let formatted_time = time[i].format("%dT%H");
-                messages.push(format!(
-                    "{} C{:.0} F{:.0} W{:.0}@{} P{:.0}",
-                    formatted_time,
-                    weather_code[i] as u8,
-                    freezing_level_height[i].round(),
-                    (wind_speed_10m[i] / 10.0).round(),
-                    (wind_direction_10m[i] / 10.0).round(),
-                    acc_precipitation.round(),
-                ));
-                acc_precipitation = 0.0;
-            }
-            i += 1;
-        }
-
-        tracing::info!("Sending reply for email {:?}", received_email);
-
-        let mut message: String = String::new();
-        for (i, m) in messages.into_iter().enumerate() {
-            if message.len() + m.len() > 160 {
-                break;
-            }
-
-            if i > 0 {
-                message.push('\n');
-            }
-            message.push_str(&m);
-        }
-        tracing::info!("message (len: {}):\n{}", message.len(), message);
-
-        let reply = match received_email {
-            ReceivedKind::Inreach(email) => Reply::InReach(InReach {
-                referral_url: email.referral_url,
-                message,
-            }),
-            ReceivedKind::Plain(email) => Reply::Plain(Plain {
-                to: email.from,
-                message,
-                in_reply_to_message_id: email.message_id,
-                subject: email.subject,
-            }),
-        };
-
         let reply_bytes = serde_json::to_vec(&reply).wrap_err("Failed to serialize reply")?;
         reply_sender.send(&reply_bytes).await?;
 

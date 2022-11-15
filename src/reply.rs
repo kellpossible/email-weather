@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    email, inreach, oauth2::AuthenticationFlow, retry::ExponentialBackoff,
+    email, inreach, oauth2::AuthenticationFlow, receive::ReceivedKind, retry::ExponentialBackoff,
     task::run_retry_log_errors, time,
 };
 
@@ -23,6 +23,16 @@ pub struct InReach {
     pub referral_url: url::Url,
     /// The message to send in the reply.
     pub message: String,
+}
+
+/// Construct an inreach reply from a received inreach email [`Received`](crate::inreach::email::Received).
+impl InReach {
+    pub fn from_received(email: crate::inreach::email::Received, message: String) -> Self {
+        Self {
+            referral_url: email.referral_url,
+            message,
+        }
+    }
 }
 
 /// Reply to a standard plain text email.
@@ -38,6 +48,18 @@ pub struct Plain {
     pub in_reply_to_message_id: Option<String>,
 }
 
+impl Plain {
+    /// Construct a plain reply from a received plain email [`Received`](crate::plain::email::Received).
+    pub fn from_received(email: crate::plain::email::Received, message: String) -> Self {
+        Self {
+            to: email.from,
+            message,
+            in_reply_to_message_id: email.message_id,
+            subject: email.subject,
+        }
+    }
+}
+
 /// A reply message.
 #[derive(Eq, PartialEq, Serialize, Deserialize, Debug)]
 pub enum Reply {
@@ -45,6 +67,16 @@ pub enum Reply {
     InReach(InReach),
     /// See [`Plain`].
     Plain(Plain),
+}
+
+impl Reply {
+    /// Create a [`Reply`] from [`ReceivedKind`], with the specified `message`.
+    pub fn from_received(email: ReceivedKind, message: String) -> Self {
+        match email {
+            ReceivedKind::Inreach(email) => Reply::InReach(InReach::from_received(email, message)),
+            ReceivedKind::Plain(email) => Reply::Plain(Plain::from_received(email, message)),
+        }
+    }
 }
 
 async fn send_reply(

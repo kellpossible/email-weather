@@ -19,6 +19,7 @@ use crate::{
     inreach,
     oauth2::AuthenticationFlow,
     plain,
+    request::{ForecastRequest, ParsedForecastRequest},
     task::run_retry_log_errors,
     time,
 };
@@ -28,11 +29,11 @@ pub trait Received {
     /// Geographical position of sender of the message (if available).
     fn position(&self) -> Option<Position>;
     /// The subset of the received message containing the request specification.
-    fn request_message(&self) -> &str;
+    fn forecast_request(&self) -> &ParsedForecastRequest;
 }
 
 /// Sum type of all possible [`Email`]s that can be received and parsed via IMAP.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum ReceivedKind {
     /// Email received from an inreach device.
     Inreach(inreach::email::Received),
@@ -45,9 +46,9 @@ pub enum ReceivedKind {
 pub enum ParseReceivedEmailError {
     /// The email being parsed was intentionally rejected.
     #[error("Rejected email because: {reason}")]
-    Rejected { 
+    Rejected {
         /// The reason why the email was rejected.
-        reason: Cow<'static, str>
+        reason: Cow<'static, str>,
     },
     /// An unexpected error occurred during parsing.
     #[error(transparent)]
@@ -124,10 +125,10 @@ impl Received for ReceivedKind {
         }
     }
 
-    fn request_message(&self) -> &str {
+    fn forecast_request(&self) -> &ParsedForecastRequest {
         match self {
-            ReceivedKind::Inreach(email) => email.request_message(),
-            ReceivedKind::Plain(email) => email.request_message(),
+            ReceivedKind::Inreach(email) => email.forecast_request(),
+            ReceivedKind::Plain(email) => email.forecast_request(),
         }
     }
 }
