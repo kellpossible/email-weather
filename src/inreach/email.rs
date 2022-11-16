@@ -8,8 +8,9 @@ use std::borrow::Cow;
 
 use crate::{
     gis::Position,
+    process::{FormatDetail, ShortFormatDetail},
     receive::{self, text_body, ParseReceivedEmail},
-    request::{ForecastRequest, ParsedForecastRequest},
+    request::ParsedForecastRequest,
 };
 
 /// An email received from an inreach device.
@@ -32,7 +33,7 @@ impl receive::Received for Received {
     }
 
     fn forecast_request(&self) -> &ParsedForecastRequest {
-        todo!()
+        &self.forecast_request
     }
 }
 
@@ -128,7 +129,29 @@ impl Received {
             eyre::bail!("Unable to parse email text as a complete inreach message")
         }
 
-        let forecast_request = ParsedForecastRequest::parse(&message_body);
+        let mut forecast_request = ParsedForecastRequest::parse(&message_body);
+        let format = &mut forecast_request.request.format;
+
+        match &mut format.detail {
+            FormatDetail::Short(short) => {
+                // Impose a message length limit of 160 characters for inreach.
+                if let Some(limit) = &mut short.length_limit {
+                    if *limit > 160 {
+                        tracing::warn!(
+                            "User specified limit ({limit}) is too large, \
+                            Inreach only supports up to 160 characters per message"
+                        );
+                        *limit = 160;
+                    }
+                } else {
+                    short.length_limit = Some(160);
+                }
+            }
+            _ => {
+                tracing::warn!("User specified format detail {:?} is not available, InReach only supports Short format detail.", format.detail);
+                format.detail = FormatDetail::Short(ShortFormatDetail::default());
+            }
+        }
 
         Ok(Self {
             from_name: from_name.unwrap(),
@@ -173,6 +196,13 @@ learn more, visit http://explore.garmin.com/inreach.
               "position": {
                 "latitude": -37.8245,
                 "longitude": 145.30328
+              },
+              "format": {
+                "detail": {
+                  "Short": {
+                    "length_limit": 160
+                  }
+                }
               }
             },
             "errors": []

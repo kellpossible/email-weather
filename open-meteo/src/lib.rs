@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use chrono::NaiveDateTime;
 use reqwest::{Method, StatusCode};
@@ -138,6 +141,41 @@ impl<'de> Deserialize<'de> for WeatherCode {
             }
         }
         deserializer.deserialize_u8(WeatherCodeVisitor)
+    }
+}
+
+impl Display for WeatherCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            WeatherCode::ClearSky => "clear sky",
+            WeatherCode::MainlyClear => "mainly clear",
+            WeatherCode::PartlyCloudy => "partly cloudy",
+            WeatherCode::Overcast => "overcast",
+            WeatherCode::Fog => "fog",
+            WeatherCode::FogDepositingRime => "fog depositing rime",
+            WeatherCode::DrizzleLight => "light drizzle",
+            WeatherCode::DrizzleModerate => "moderate drizzle",
+            WeatherCode::DrizzleDense => "dense drizzle",
+            WeatherCode::DrizzleFreezingLight => "light freezing drizzle",
+            WeatherCode::DrizzleFreezingDense => "dense freezing drizzle",
+            WeatherCode::RainSlight => "slight rain",
+            WeatherCode::RainModerate => "moderate rain",
+            WeatherCode::RainHeavy => "heavy rain",
+            WeatherCode::RainFreezingLight => "light freezing rain",
+            WeatherCode::RainFreezingHeavy => "heavy freezing rain",
+            WeatherCode::SnowSlight => "slight snow",
+            WeatherCode::SnowModerate => "moderate snow",
+            WeatherCode::SnowHeavy => "heavy snow",
+            WeatherCode::SnowGrains => "snow grains",
+            WeatherCode::RainShowersSlight => "slight rain showers",
+            WeatherCode::RainShowersModerate => "moderate rain showers",
+            WeatherCode::RainShowersViolent => "violent rain showers",
+            WeatherCode::SnowShowersSlight => "slight snow showers",
+            WeatherCode::SnowShowersHeavy => "heavy snow showers",
+            WeatherCode::ThunderstormSlightOrModerate => "slight or moderate thunderstorm",
+            WeatherCode::ThunderstormHailSlight => "slight thunderstorm with hail",
+            WeatherCode::ThunderstormHailHeavy => "heavy thunderstorm with hail",
+        })
     }
 }
 

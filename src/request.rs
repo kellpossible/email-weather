@@ -5,20 +5,25 @@ use std::str::FromStr;
 
 use chumsky::{
     prelude::Simple,
-    primitive::{end, just},
+    primitive::{choice, end, filter, just},
     text::{self, TextParser},
     Parser,
 };
 use color_eyre::Help;
 use serde::{Deserialize, Serialize};
 
-use crate::gis::Position;
+use crate::{
+    gis::Position,
+    process::{FormatDetail, FormatForecastOptions, ShortFormatDetail},
+};
 
 /// A request for a weather forecast.
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct ForecastRequest {
     /// Requested forecast position.
     pub position: Option<Position>,
+    /// Options for formatting the output message.
+    pub format: FormatForecastOptions,
 }
 
 impl ForecastRequest {
@@ -63,15 +68,65 @@ impl ParsedForecastRequest {
 }
 
 fn request_parser() -> impl Parser<char, ForecastRequest, Error = Simple<char>> {
-    position_parser()
+    #[derive(Debug)]
+    enum Expr {
+        Position(Position),
+        Format(FormatForecastOptions),
+    }
+
+    fn fold_expr(mut request: ForecastRequest, expr: Expr) -> ForecastRequest {
+        match expr {
+            Expr::Position(position) => request.position = Some(position),
+            Expr::Format(f) => request.format = f,
+        }
+        request
+    }
+
+    let fmt = format_parser().map(Expr::Format);
+    let pos = position_parser().map(Expr::Position);
+
+    pos.or_not()
+        .map(|expr_option| expr_option.into_iter().collect::<Vec<Expr>>())
+        .then_ignore(just(' ').or_not())
+        .chain(fmt.or_not())
+        .map(|exprs| (ForecastRequest::default(), exprs))
+        .foldl(fold_expr)
         .padded()
-        .or_not()
-        .map(|position| {
-            let mut request = ForecastRequest::default();
-            request.position = position;
-            request
-        })
         .then_ignore(end())
+        .labelled("request")
+}
+
+fn format_parser() -> impl Parser<char, FormatForecastOptions, Error = Simple<char>> {
+    enum Expr {
+        FormatDetail(FormatDetail),
+    }
+
+    fn fold_expr(mut options: FormatForecastOptions, expr: Expr) -> FormatForecastOptions {
+        match expr {
+            Expr::FormatDetail(detail) => options.detail = detail,
+        };
+        options
+    }
+
+    let ident = filter(|c: &char| c == &'f' || c == &'F');
+    let length_limit = text::int(10).try_map(|s: String, span| {
+        s.parse::<usize>()
+            .map_err(|e| Simple::custom(span, e.to_string()))
+    });
+    let short = filter(|c: &char| c == &'s' || c == &'S')
+        .ignore_then(length_limit.or_not())
+        .map(|limit_option| {
+            let mut short = ShortFormatDetail::default();
+            short.length_limit = limit_option;
+            FormatDetail::Short(short)
+        });
+    let long = filter(|c: &char| c == &'l' || c == &'L').map(|_| FormatDetail::Long);
+
+    ident
+        .ignore_then(choice((short, long)).map(Expr::FormatDetail).or_not())
+        .map(|exprs| (FormatForecastOptions::default(), exprs))
+        .foldl(fold_expr)
+        .labelled("format")
 }
 
 /// Parses 32bit floating point numbers:
@@ -156,9 +211,13 @@ impl FromStr for Position {
 
 #[cfg(test)]
 mod test {
-    use chumsky::Parser;
+    use chumsky::{prelude::Simple, Parser};
 
-    use crate::{gis::Position, request::ParsedForecastRequest};
+    use crate::{
+        gis::Position,
+        process::{FormatDetail, FormatForecastOptions, ShortFormatDetail},
+        request::{format_parser, ParsedForecastRequest},
+    };
 
     use super::{f32_parser, position_parser, ForecastRequest};
 
@@ -213,10 +272,16 @@ mod test {
     #[test]
     fn test_parse_request() {
         let (request, errors) = ForecastRequest::parse("45,-24");
-        assert!(errors.is_empty());
+        assert_eq!(Vec::<Simple<char>>::new(), errors);
         assert_eq!(Some(Position::new(45.0, -24.0)), request.position);
+
+        let (request, errors) = ForecastRequest::parse("45,-24 FL");
+        assert_eq!(Vec::<Simple<char>>::new(), errors);
+        assert_eq!(Some(Position::new(45.0, -24.0)), request.position);
+        assert_eq!(FormatDetail::Long, request.format.detail);
+
         let parsed = ParsedForecastRequest::parse("-37.8245005,145.3032913");
-        assert!(parsed.errors.is_empty());
+        assert_eq!(Vec::<String>::new(), parsed.errors);
         assert_eq!(
             Some(Position::new(-37.8245005, 145.3032913)),
             parsed.request.position
@@ -226,7 +291,11 @@ mod test {
     #[test]
     fn test_parse_empty_request() {
         let (request, errors) = ForecastRequest::parse("");
-        assert!(errors.is_empty());
+        assert_eq!(Vec::<Simple<char>>::new(), errors);
+        assert!(request.position.is_none());
+
+        let (request, errors) = ForecastRequest::parse(" ");
+        assert_eq!(Vec::<Simple<char>>::new(), errors);
         assert!(request.position.is_none());
     }
 
@@ -239,5 +308,41 @@ mod test {
         let (request, errors) = ForecastRequest::parse("12l3kjlkdfsh,lskjdfsl");
         assert!(request.position.is_none());
         assert_eq!(1, errors.len());
+    }
+
+    #[test]
+    fn test_parse_format_short_success() {
+        let expected_format_options = FormatForecastOptions {
+            detail: FormatDetail::Short(ShortFormatDetail::default()),
+            ..FormatForecastOptions::default()
+        };
+        let format_options = format_parser().parse("fs").unwrap();
+        assert_eq!(expected_format_options, format_options);
+        let format_options = format_parser().parse("FS").unwrap();
+        assert_eq!(expected_format_options, format_options);
+    }
+
+    #[test]
+    fn test_parse_format_long_success() {
+        let expected_format_options = FormatForecastOptions {
+            detail: FormatDetail::Long,
+            ..FormatForecastOptions::default()
+        };
+        let format_options = format_parser().parse("fl").unwrap();
+        assert_eq!(expected_format_options, format_options);
+        let format_options = format_parser().parse("FL").unwrap();
+        assert_eq!(expected_format_options, format_options);
+    }
+
+    #[test]
+    fn test_parse_format_short_limit_success() {
+        let expected_format_options = FormatForecastOptions {
+            detail: FormatDetail::Short(crate::process::ShortFormatDetail {
+                length_limit: Some(1000),
+            }),
+            ..FormatForecastOptions::default()
+        };
+        let format_options = format_parser().parse("FS1000").unwrap();
+        assert_eq!(expected_format_options, format_options);
     }
 }

@@ -146,6 +146,13 @@ Content-Type: text/html; charset="UTF-8"
               "position": {
                 "latitude": -37.8245,
                 "longitude": 145.30328
+              },
+              "format": {
+                "detail": {
+                  "Short": {
+                    "length_limit": null
+                  }
+                }
               }
             },
             "errors": []
@@ -203,6 +210,13 @@ padding-left:1ex">An error occurred while processing your request<br>
               "position": {
                 "latitude": -37.8245,
                 "longitude": 145.30328
+              },
+              "format": {
+                "detail": {
+                  "Short": {
+                    "length_limit": null
+                  }
+                }
               }
             },
             "errors": []

@@ -11,6 +11,8 @@ use chrono::NaiveDateTime;
 use chrono_tz::OffsetComponents;
 use eyre::Context;
 use open_meteo::{Hourly, HourlyVariable, TimeZone, WeatherCode};
+use serde::{Deserialize, Serialize};
+use tabled::Tabled;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -95,7 +97,34 @@ trait FormatForecast {
     fn format(&self, options: &FormatForecastOptions) -> String;
 }
 
-struct FormatForecastOptions {}
+/// Extra options for short [`FormatDetail`].
+#[derive(Default, PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct ShortFormatDetail {
+    /// Limit to length of message.
+    pub length_limit: Option<usize>,
+}
+
+/// What amount of detail to use for formatting the forecast message.
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub enum FormatDetail {
+    /// As short as possible. e.g. `F24`
+    Short(ShortFormatDetail),
+    /// Expanded with full detail. e.g. `Freezing Level: 2400m`
+    Long,
+}
+
+impl Default for FormatDetail {
+    fn default() -> Self {
+        Self::Short(ShortFormatDetail::default())
+    }
+}
+
+/// Options for formatting the forecast.
+#[derive(Default, PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct FormatForecastOptions {
+    /// Detail to apply to formatting the message.
+    pub detail: FormatDetail,
+}
 
 struct ForecastOutput {
     total_timezone_offset: chrono::Duration,
@@ -125,24 +154,63 @@ impl FormatForecast for ForecastOutput {
 
         let forecast_elevation = self.forecast_elevation;
 
-        output.push_str(&format!("Tz{formatted_offset} FE{forecast_elevation}"));
+        output.push_str(&match options.detail {
+            FormatDetail::Short(_) => format!("Tz{formatted_offset} FE{forecast_elevation}"),
+            FormatDetail::Long => {
+                format!("Time Zone: {formatted_offset}, Forecast Elevation: {forecast_elevation}")
+            }
+        });
 
         if let Some(terrain_elevation) = self.terrain_elevation {
-            output.push_str(&format!(" TE{terrain_elevation}"));
+            output.push_str(&match options.detail {
+                FormatDetail::Short(_) => format!(" TE{terrain_elevation}"),
+                FormatDetail::Long => format!(", Terrain Elevation: {terrain_elevation}"),
+            });
         }
 
         output.push('\n');
 
-        for (i, r) in self.rows.iter().enumerate() {
-            let row_output = r.format(options);
-            if output.len() + row_output.len() > 160 {
-                break;
-            }
+        match &options.detail {
+            FormatDetail::Short(short) => {
+                for (i, r) in self.rows.iter().enumerate() {
+                    let row_output = r.format(options);
 
-            if i > 0 {
-                output.push('\n');
+                    if let Some(length_limit) = short.length_limit {
+                        if output.len() + row_output.len() > length_limit {
+                            break;
+                        }
+                    }
+
+                    if i > 0 {
+                        output.push('\n');
+                    }
+                    output.push_str(&row_output);
+                }
             }
-            output.push_str(&row_output);
+            FormatDetail::Long => {
+                if !self.rows.is_empty() {
+                    let mut builder = tabled::builder::Builder::new();
+
+                    for r in &self.rows {
+                        let mut record = vec![r.time.to_string()];
+                        for p in &r.parameters {
+                            record.push(p.format(options))
+                        }
+
+                        builder.add_record(record);
+                    }
+
+                    let r = self.rows.first().expect("expected at least one row");
+                    let mut columns = vec![r.time.to_string()];
+                    for p in &r.parameters {
+                        columns.push(p.header());
+                    }
+                    builder.set_columns(columns);
+                    let mut table = builder.build();
+                    table.with(tabled::Style::ascii());
+                    output.push_str(&table.to_string());
+                }
+            }
         }
 
         output
@@ -156,8 +224,7 @@ struct ForecastRow {
 
 impl FormatForecast for ForecastRow {
     fn format(&self, options: &FormatForecastOptions) -> String {
-        let time = self.time.format("%dT%H");
-        let mut output: String = format!("{time}");
+        let mut output: String = self.time.format("%dT%H").to_string();
 
         for parameter in &self.parameters {
             output.push(' ');
@@ -175,25 +242,44 @@ enum ForecastParameter {
     AccumulatedPrecipitation(f32),
 }
 
-impl FormatForecast for ForecastParameter {
-    fn format(&self, _options: &FormatForecastOptions) -> String {
+impl ForecastParameter {
+    fn header(&self) -> String {
         match self {
-            ForecastParameter::WeatherCode(code) => {
-                format!("C{:.0}", *code as u8)
-            }
-            ForecastParameter::FreezingLevelHeight(height) => {
-                format!("F{:.0}", height.round())
-            }
-            ForecastParameter::Wind10m { speed, direction } => {
-                format!(
+            ForecastParameter::WeatherCode(_) => "Weather Code",
+            ForecastParameter::FreezingLevelHeight(_) => "Freezing Level",
+            ForecastParameter::Wind10m { .. } => "Wind",
+            ForecastParameter::AccumulatedPrecipitation(_) => "Accumulated Precipitation",
+        }
+        .to_string()
+    }
+}
+
+impl FormatForecast for ForecastParameter {
+    fn format(&self, options: &FormatForecastOptions) -> String {
+        match self {
+            ForecastParameter::WeatherCode(code) => match options.detail {
+                FormatDetail::Short(_) => format!("C{:.0}", *code as u8),
+                FormatDetail::Long => format!("{}", code),
+            },
+
+            ForecastParameter::FreezingLevelHeight(height) => match options.detail {
+                FormatDetail::Short(_) => format!("F{:.0}", (height / 100.0).round()),
+                FormatDetail::Long => format!("{:.0}m", height.round()),
+            },
+            ForecastParameter::Wind10m { speed, direction } => match options.detail {
+                FormatDetail::Short(_) => format!(
                     "W{:.0}@{:.0}",
                     (speed / 10.0).round(),
                     (direction / 10.0).round()
-                )
-            }
-            ForecastParameter::AccumulatedPrecipitation(precip) => {
-                format!("P{:.0}", precip.round())
-            }
+                ),
+                FormatDetail::Long => {
+                    format!("{:.0} km/h at {:.0}°", speed.round(), direction.round())
+                }
+            },
+            ForecastParameter::AccumulatedPrecipitation(precip) => match options.detail {
+                FormatDetail::Short(_) => format!("P{:.0}", precip.round()),
+                FormatDetail::Long => format!("{:.1}mm", precip.round()),
+            },
         }
     }
 }
@@ -202,8 +288,8 @@ async fn process_email(
     http_client: &reqwest::Client,
     received_email: &ReceivedKind,
 ) -> Result<Reply, ProcessEmailError> {
-    // TODO: parse message body
     let request = &received_email.forecast_request().request;
+
     let position = request
         .position
         .or(received_email.position())
@@ -338,7 +424,7 @@ async fn process_email(
         rows: forecast_rows,
     };
 
-    let message: String = forecast_output.format(&FormatForecastOptions {});
+    let message: String = forecast_output.format(&request.format);
 
     tracing::info!("Sending reply for email {:?}", received_email);
 

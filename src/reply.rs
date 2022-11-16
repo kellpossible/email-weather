@@ -4,6 +4,7 @@ use std::{sync::Arc, time::Duration};
 
 use eyre::Context;
 use lettre::{
+    message::MultiPart,
     transport::smtp::authentication::{Credentials, Mechanism},
     AsyncSmtpTransport, AsyncTransport, Tokio1Executor,
 };
@@ -11,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    email, inreach, oauth2::AuthenticationFlow, receive::ReceivedKind, retry::ExponentialBackoff,
-    task::run_retry_log_errors, time,
+    email, inreach, oauth2::AuthenticationFlow, process::FormatDetail, receive::ReceivedKind,
+    retry::ExponentialBackoff, task::run_retry_log_errors, time,
 };
 
 /// A reply to an inreach device.
@@ -27,6 +28,8 @@ pub struct InReach {
 
 /// Construct an inreach reply from a received inreach email [`Received`](crate::inreach::email::Received).
 impl InReach {
+    /// Construct a new [`InReach`] from an email received from an inreach
+    /// [`Recieved`](crate::inreach::email::Received).
     pub fn from_received(email: crate::inreach::email::Received, message: String) -> Self {
         Self {
             referral_url: email.referral_url,
@@ -44,6 +47,8 @@ pub struct Plain {
     pub message: String,
     /// Who the reply is addressed to.
     pub to: email::Account,
+    /// Render out an additional fixed width HTML version.
+    pub html: bool,
     /// Message id that this is in reply to.
     pub in_reply_to_message_id: Option<String>,
 }
@@ -56,6 +61,9 @@ impl Plain {
             message,
             in_reply_to_message_id: email.message_id,
             subject: email.subject,
+            /// The logic here is that if format detail is long, we don't care about the additional
+            /// characters imposed by the html copy, and the benefits of improved formatting.
+            html: email.forecast_request.request.format.detail == FormatDetail::Long,
         }
     }
 }
@@ -89,15 +97,11 @@ async fn send_reply(
 
     match reply {
         Reply::InReach(reply) => {
-            // TODO refactor move Reply into inreach::reply
             inreach::reply::reply(http_client, &reply.referral_url, &reply.message)
                 .await
                 .wrap_err("Error sending reply message")?;
         }
         Reply::Plain(reply) => {
-            // TODO send plain reply
-            //https://docs.rs/lettre/latest/lettre/transport/smtp/authentication/enum.Mechanism.html
-            //XOAUTH2
             let builder = lettre::Message::builder()
                 .from(email_account.clone().into())
                 .to(reply.to.clone().into());
@@ -114,8 +118,16 @@ async fn send_reply(
                 builder.subject("Weather Forecast")
             };
 
-            let message: lettre::Message = builder.body(reply.message.clone())?;
-            tracing::debug!("Replying: {:?}", message);
+            let message: lettre::Message = if reply.html {
+                builder.multipart(MultiPart::alternative_plain_html(
+                    reply.message.clone(),
+                    html_body(&reply.message),
+                ))?
+            } else {
+                builder.body(reply.message.clone())?
+            };
+
+            tracing::trace!("Replying: {:?}", message);
 
             sender
                 .send(message)
@@ -126,6 +138,10 @@ async fn send_reply(
     tracing::info!("Successfully sent reply!");
 
     Ok(())
+}
+
+fn html_body(body: &str) -> String {
+    format!("<pre><code>{body}</pre></code>")
 }
 
 /// Number of attempts to retry sending a message before discarding it.
