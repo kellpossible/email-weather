@@ -211,6 +211,10 @@ impl FormatForecast for ForecastOutput {
                         let mut buffer = html_builder::Buffer::new();
                         let mut table = buffer.table().attr(style_attr);
                         let mut header_row = table.tr();
+
+                        let mut th = header_row.th().attr(style_attr);
+                        th.write_str("Time").unwrap();
+
                         let r = self.rows.first().expect("expected at least one row");
                         for p in &r.parameters {
                             let mut th = header_row.th().attr(style_attr);
@@ -219,6 +223,10 @@ impl FormatForecast for ForecastOutput {
 
                         for r in &self.rows {
                             let mut tr = table.tr();
+
+                            let mut td = tr.td().attr(style_attr);
+                            write!(td, "{}", r.time).unwrap();
+
                             for p in &r.parameters {
                                 let mut td = tr.td().attr(style_attr);
                                 td.write_str(&p.format(options)).unwrap();
@@ -242,7 +250,7 @@ impl FormatForecast for ForecastOutput {
                         }
 
                         let r = self.rows.first().expect("expected at least one row");
-                        let mut columns = vec![r.time.to_string()];
+                        let mut columns = vec!["Time".to_string()];
                         for p in &r.parameters {
                             columns.push(p.header());
                         }
