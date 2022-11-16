@@ -753,6 +753,7 @@ dependencies = [
  "oauth2",
  "once_cell",
  "open-meteo",
+ "open-topo-data",
  "regex",
  "reqwest",
  "ron",

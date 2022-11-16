@@ -14,14 +14,8 @@ use tokio::{
 use tracing::Instrument;
 
 use crate::{
-    email,
-    gis::Position,
-    inreach,
-    oauth2::AuthenticationFlow,
-    plain,
-    request::{ForecastRequest, ParsedForecastRequest},
-    task::run_retry_log_errors,
-    time,
+    email, gis::Position, inreach, oauth2::AuthenticationFlow, plain,
+    request::ParsedForecastRequest, task::run_retry_log_errors, time,
 };
 
 /// An email received via IMAP.

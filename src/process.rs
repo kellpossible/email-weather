@@ -1,10 +1,16 @@
 //! See [`process_emails()`].
 
-use std::{collections::HashSet, convert::TryFrom, fmt::Display, sync::Arc};
+use std::{
+    collections::HashSet,
+    convert::TryFrom,
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
+use chrono::NaiveDateTime;
 use chrono_tz::OffsetComponents;
 use eyre::Context;
-use open_meteo::{Forecast, ForecastParameters, Hourly, HourlyVariable, TimeZone, WeatherCode};
+use open_meteo::{Hourly, HourlyVariable, TimeZone, WeatherCode};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -85,6 +91,113 @@ enum ProcessEmailError {
     Network,
 }
 
+trait FormatForecast {
+    fn format(&self, options: &FormatForecastOptions) -> String;
+}
+
+struct FormatForecastOptions {}
+
+struct ForecastOutput {
+    total_timezone_offset: chrono::Duration,
+    forecast_elevation: f32,
+    terrain_elevation: Option<f32>,
+    rows: Vec<ForecastRow>,
+}
+
+impl FormatForecast for ForecastOutput {
+    fn format(&self, options: &FormatForecastOptions) -> String {
+        let mut output = String::new();
+        let total_offset = &self.total_timezone_offset;
+        let formatted_offset: String = if total_offset.is_zero() {
+            "GMT".to_string()
+        } else {
+            let formatted_duration = format!(
+                "{:02}:{:02}",
+                total_offset.num_hours(),
+                total_offset.num_minutes() % 60
+            );
+            if total_offset > &chrono::Duration::zero() {
+                format!("+{}", formatted_duration)
+            } else {
+                format!("-{}", formatted_duration)
+            }
+        };
+
+        let forecast_elevation = self.forecast_elevation;
+
+        output.push_str(&format!("Tz{formatted_offset} FE{forecast_elevation}"));
+
+        if let Some(terrain_elevation) = self.terrain_elevation {
+            output.push_str(&format!(" TE{terrain_elevation}"));
+        }
+
+        output.push('\n');
+
+        for (i, r) in self.rows.iter().enumerate() {
+            let row_output = r.format(options);
+            if output.len() + row_output.len() > 160 {
+                break;
+            }
+
+            if i > 0 {
+                output.push('\n');
+            }
+            output.push_str(&row_output);
+        }
+
+        output
+    }
+}
+
+struct ForecastRow {
+    time: NaiveDateTime,
+    parameters: Vec<ForecastParameter>,
+}
+
+impl FormatForecast for ForecastRow {
+    fn format(&self, options: &FormatForecastOptions) -> String {
+        let time = self.time.format("%dT%H");
+        let mut output: String = format!("{time}");
+
+        for parameter in &self.parameters {
+            output.push(' ');
+            output.push_str(&parameter.format(options));
+        }
+
+        output
+    }
+}
+
+enum ForecastParameter {
+    WeatherCode(WeatherCode),
+    FreezingLevelHeight(f32),
+    Wind10m { speed: f32, direction: f32 },
+    AccumulatedPrecipitation(f32),
+}
+
+impl FormatForecast for ForecastParameter {
+    fn format(&self, _options: &FormatForecastOptions) -> String {
+        match self {
+            ForecastParameter::WeatherCode(code) => {
+                format!("C{:.0}", *code as u8)
+            }
+            ForecastParameter::FreezingLevelHeight(height) => {
+                format!("F{:.0}", height.round())
+            }
+            ForecastParameter::Wind10m { speed, direction } => {
+                format!(
+                    "W{:.0}@{:.0}",
+                    (speed / 10.0).round(),
+                    (direction / 10.0).round()
+                )
+            }
+            ForecastParameter::AccumulatedPrecipitation(precip) => {
+                format!("P{:.0}", precip.round())
+            }
+        }
+    }
+}
+
 async fn process_email(
     http_client: &reqwest::Client,
     received_email: &ReceivedKind,
@@ -95,7 +208,7 @@ async fn process_email(
         .position
         .or(received_email.position())
         .ok_or_else(|| ProcessEmailError::NoPosition)?;
-    let forecast_parameters = ForecastParameters::builder()
+    let forecast_parameters = open_meteo::ForecastParameters::builder()
         .latitude(position.latitude)
         .longitude(position.longitude)
         .hourly_entry(HourlyVariable::FreezingLevelHeight)
@@ -110,9 +223,10 @@ async fn process_email(
         "Obtaining forecast for forecast parameters {}",
         serde_json::to_string_pretty(&forecast_parameters).map_err(eyre::Error::from)?
     );
-    let forecast: Forecast = open_meteo::obtain_forecast(&http_client, &forecast_parameters)
-        .await
-        .wrap_err("Error obtaining forecast")?;
+    let forecast: open_meteo::Forecast =
+        open_meteo::obtain_forecast(&http_client, &forecast_parameters)
+            .await
+            .wrap_err("Error obtaining forecast")?;
     tracing::info!("Successfully obtained forecast");
 
     let hourly: Hourly = forecast
@@ -152,7 +266,6 @@ async fn process_email(
         return Err(eyre::eyre!("forecast hourly array lengths don't match").into());
     }
 
-    let mut messages: Vec<String> = Vec::new();
     let utc_now: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();
     let offset = chrono::TimeZone::offset_from_utc_datetime(&forecast.timezone, &utc_now);
     let current_local_time: chrono::NaiveDateTime =
@@ -168,22 +281,25 @@ async fn process_email(
         );
     }
 
-    let formatted_offset: String = if total_offset.is_zero() {
-        "GMT".to_string()
-    } else {
-        let formatted_duration = format!(
-            "{:02}:{:02}",
-            total_offset.num_hours(),
-            total_offset.num_minutes() % 60
-        );
-        if total_offset > chrono::Duration::zero() {
-            format!("+{}", formatted_duration)
-        } else {
-            format!("-{}", formatted_duration)
+    let terrain_elevation = match open_topo_data::obtain_elevation(
+        http_client,
+        &open_topo_data::Parameters {
+            latitude: position.latitude,
+            longitude: position.longitude,
+            dataset: open_topo_data::Dataset::Mapzen,
+        },
+    )
+    .await
+    .wrap_err("Error obtaining terrain elevation")
+    {
+        Ok(terrain_elevation) => Some(terrain_elevation),
+        Err(error) => {
+            tracing::error!("{}", error);
+            None
         }
     };
 
-    messages.push(format!("Tz{} E{:.0}", formatted_offset, forecast.elevation));
+    let mut forecast_rows: Vec<ForecastRow> = Vec::with_capacity(16);
 
     // Skip times that are after the current local time.
     let start_i: usize = time.iter().enumerate().fold(0, |acc, (i, local_time)| {
@@ -199,34 +315,33 @@ async fn process_email(
     while i <= usize::min(time.len() - 1, i + 48) {
         acc_precipitation += precipitation[i];
         if (i - start_i) % 6 == 0 {
-            let formatted_time = time[i].format("%dT%H");
-            messages.push(format!(
-                "{} C{:.0} F{:.0} W{:.0}@{} P{:.0}",
-                formatted_time,
-                weather_code[i] as u8,
-                freezing_level_height[i].round(),
-                (wind_speed_10m[i] / 10.0).round(),
-                (wind_direction_10m[i] / 10.0).round(),
-                acc_precipitation.round(),
-            ));
-            acc_precipitation = 0.0;
+            forecast_rows.push(ForecastRow {
+                time: time[i],
+                parameters: vec![
+                    ForecastParameter::WeatherCode(weather_code[i]),
+                    ForecastParameter::FreezingLevelHeight(freezing_level_height[i]),
+                    ForecastParameter::Wind10m {
+                        speed: wind_speed_10m[i],
+                        direction: wind_direction_10m[i],
+                    },
+                    ForecastParameter::AccumulatedPrecipitation(acc_precipitation),
+                ],
+            });
         }
         i += 1;
     }
 
+    let forecast_output = ForecastOutput {
+        total_timezone_offset: total_offset,
+        forecast_elevation: forecast.elevation,
+        terrain_elevation,
+        rows: forecast_rows,
+    };
+
+    let message: String = forecast_output.format(&FormatForecastOptions {});
+
     tracing::info!("Sending reply for email {:?}", received_email);
 
-    let mut message: String = String::new();
-    for (i, m) in messages.into_iter().enumerate() {
-        if message.len() + m.len() > 160 {
-            break;
-        }
-
-        if i > 0 {
-            message.push('\n');
-        }
-        message.push_str(&m);
-    }
     tracing::info!("message (len: {}):\n{}", message.len(), message);
 
     Ok(Reply::from_received(received_email.clone(), message))
@@ -249,7 +364,7 @@ async fn process_emails_impl(
                     "No forecast position specified".to_string(),
                 ),
                 ProcessEmailError::Unexpected(error) => {
-                    tracing::error!("Unexpected error occurred: {}", error);
+                    tracing::error!("Unexpected error occurred: {:?}", error);
                     Reply::from_received(
                         received_email,
                         "An error occurred while processing your request".to_string(),

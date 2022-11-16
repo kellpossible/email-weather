@@ -47,21 +47,24 @@ impl Dataset {
 #[derive(Deserialize)]
 struct ObtainResults {
     results: Vec<ObtainResult>,
+    #[allow(unused)]
     status: String,
 }
 
+#[allow(unused)]
 #[derive(Deserialize)]
 struct ObtainResult {
-    elevation: f64,
+    elevation: f32,
     location: Location,
     dataset: Dataset,
 }
 
+#[allow(unused)]
 #[derive(Deserialize)]
 struct Location {
     #[serde(rename = "lat")]
     latitude: f32,
-    #[serde(rename = "lon")]
+    #[serde(rename = "lng")]
     longitude: f32,
 }
 
@@ -76,15 +79,15 @@ pub enum Error {
 }
 
 pub struct Parameters {
-    latitude: f32,
-    longitude: f32,
-    dataset: Dataset,
+    pub latitude: f32,
+    pub longitude: f32,
+    pub dataset: Dataset,
 }
 
 pub async fn obtain_elevation(
     client: &reqwest::Client,
     parameters: &Parameters,
-) -> Result<f64, Error> {
+) -> Result<f32, Error> {
     let url = format!(
         "https://api.opentopodata.org/v1/{}?locations={},{}",
         serde_json::to_value(&parameters.dataset)?.as_str().unwrap(),
