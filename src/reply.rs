@@ -12,8 +12,13 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    email, inreach, oauth2::AuthenticationFlow, process::FormatDetail, receive::ReceivedKind,
-    retry::ExponentialBackoff, task::run_retry_log_errors, time,
+    email, inreach,
+    oauth2::AuthenticationFlow,
+    process::{FormatDetail, LongFormatStyle},
+    receive::ReceivedKind,
+    retry::ExponentialBackoff,
+    task::run_retry_log_errors,
+    time,
 };
 
 /// A reply to an inreach device.
@@ -43,27 +48,29 @@ impl InReach {
 pub struct Plain {
     /// Subject of the email that is being replied to.
     pub subject: Option<String>,
-    /// The message to send in the reply.
-    pub message: String,
+    /// The plain text message to send in the reply.
+    pub plain_message: String,
+    /// The html message to send in the reply.
+    pub html_message: Option<String>,
     /// Who the reply is addressed to.
     pub to: email::Account,
-    /// Render out an additional fixed width HTML version.
-    pub html: bool,
     /// Message id that this is in reply to.
     pub in_reply_to_message_id: Option<String>,
 }
 
 impl Plain {
     /// Construct a plain reply from a received plain email [`Received`](crate::plain::email::Received).
-    pub fn from_received(email: crate::plain::email::Received, message: String) -> Self {
+    pub fn from_received(
+        email: crate::plain::email::Received,
+        plain_message: String,
+        html_message: Option<String>,
+    ) -> Self {
         Self {
             to: email.from,
-            message,
+            plain_message,
+            html_message,
             in_reply_to_message_id: email.message_id,
             subject: email.subject,
-            /// The logic here is that if format detail is long, we don't care about the additional
-            /// characters imposed by the html copy, and the benefits of improved formatting.
-            html: email.forecast_request.request.format.detail == FormatDetail::Long,
         }
     }
 }
@@ -79,10 +86,18 @@ pub enum Reply {
 
 impl Reply {
     /// Create a [`Reply`] from [`ReceivedKind`], with the specified `message`.
-    pub fn from_received(email: ReceivedKind, message: String) -> Self {
+    pub fn from_received(
+        email: ReceivedKind,
+        plain_message: String,
+        html_message: Option<String>,
+    ) -> Self {
         match email {
-            ReceivedKind::Inreach(email) => Reply::InReach(InReach::from_received(email, message)),
-            ReceivedKind::Plain(email) => Reply::Plain(Plain::from_received(email, message)),
+            ReceivedKind::Inreach(email) => {
+                Reply::InReach(InReach::from_received(email, plain_message))
+            }
+            ReceivedKind::Plain(email) => {
+                Reply::Plain(Plain::from_received(email, plain_message, html_message))
+            }
         }
     }
 }
@@ -118,13 +133,13 @@ async fn send_reply(
                 builder.subject("Weather Forecast")
             };
 
-            let message: lettre::Message = if reply.html {
+            let message: lettre::Message = if let Some(html_message) = &reply.html_message {
                 builder.multipart(MultiPart::alternative_plain_html(
-                    reply.message.clone(),
-                    html_body(&reply.message),
+                    reply.plain_message.clone(),
+                    html_message.clone(),
                 ))?
             } else {
-                builder.body(reply.message.clone())?
+                builder.body(reply.plain_message.clone())?
             };
 
             tracing::trace!("Replying: {:?}", message);
@@ -138,10 +153,6 @@ async fn send_reply(
     tracing::info!("Successfully sent reply!");
 
     Ok(())
-}
-
-fn html_body(body: &str) -> String {
-    format!("<pre><code>{body}</pre></code>")
 }
 
 /// Number of attempts to retry sending a message before discarding it.

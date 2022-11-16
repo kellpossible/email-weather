@@ -3,16 +3,16 @@
 use std::{
     collections::HashSet,
     convert::TryFrom,
-    fmt::{Display, Formatter},
+    fmt::{Display, Write},
     sync::Arc,
 };
 
 use chrono::NaiveDateTime;
 use chrono_tz::OffsetComponents;
 use eyre::Context;
+use html_builder::Html5;
 use open_meteo::{Hourly, HourlyVariable, TimeZone, WeatherCode};
 use serde::{Deserialize, Serialize};
-use tabled::Tabled;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -104,13 +104,29 @@ pub struct ShortFormatDetail {
     pub length_limit: Option<usize>,
 }
 
+/// Extra options for long [`FormatDetail`].
+#[derive(Default, PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub struct LongFormatDetail {
+    /// Render the table using html
+    pub style: Option<LongFormatStyle>,
+}
+
+/// Extra options for long [`FormatDetail`].
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
+pub enum LongFormatStyle {
+    /// Render table and features using html.
+    Html,
+    /// Render table and features using plain text.
+    PlainText,
+}
+
 /// What amount of detail to use for formatting the forecast message.
 #[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub enum FormatDetail {
     /// As short as possible. e.g. `F24`
     Short(ShortFormatDetail),
     /// Expanded with full detail. e.g. `Freezing Level: 2400m`
-    Long,
+    Long(LongFormatDetail),
 }
 
 impl Default for FormatDetail {
@@ -156,7 +172,7 @@ impl FormatForecast for ForecastOutput {
 
         output.push_str(&match options.detail {
             FormatDetail::Short(_) => format!("Tz{formatted_offset} FE{forecast_elevation}"),
-            FormatDetail::Long => {
+            FormatDetail::Long(_) => {
                 format!("Time Zone: {formatted_offset}, Forecast Elevation: {forecast_elevation}")
             }
         });
@@ -164,7 +180,7 @@ impl FormatForecast for ForecastOutput {
         if let Some(terrain_elevation) = self.terrain_elevation {
             output.push_str(&match options.detail {
                 FormatDetail::Short(_) => format!(" TE{terrain_elevation}"),
-                FormatDetail::Long => format!(", Terrain Elevation: {terrain_elevation}"),
+                FormatDetail::Long(_) => format!(", Terrain Elevation: {terrain_elevation}"),
             });
         }
 
@@ -187,30 +203,56 @@ impl FormatForecast for ForecastOutput {
                     output.push_str(&row_output);
                 }
             }
-            FormatDetail::Long => {
-                if !self.rows.is_empty() {
-                    let mut builder = tabled::builder::Builder::new();
-
-                    for r in &self.rows {
-                        let mut record = vec![r.time.to_string()];
+            FormatDetail::Long(long) => match long.style {
+                Some(LongFormatStyle::Html) => {
+                    if !self.rows.is_empty() {
+                        let style_attr =
+                            r#"style="border: 1px solid black;border-collapse: collapse;""#;
+                        let mut buffer = html_builder::Buffer::new();
+                        let mut table = buffer.table().attr(style_attr);
+                        let mut header_row = table.tr();
+                        let r = self.rows.first().expect("expected at least one row");
                         for p in &r.parameters {
-                            record.push(p.format(options))
+                            let mut th = header_row.th().attr(style_attr);
+                            th.write_str(&p.header()).unwrap();
                         }
 
-                        builder.add_record(record);
-                    }
+                        for r in &self.rows {
+                            let mut tr = table.tr();
+                            for p in &r.parameters {
+                                let mut td = tr.td().attr(style_attr);
+                                td.write_str(&p.format(options)).unwrap();
+                            }
+                        }
 
-                    let r = self.rows.first().expect("expected at least one row");
-                    let mut columns = vec![r.time.to_string()];
-                    for p in &r.parameters {
-                        columns.push(p.header());
+                        output.push_str(&buffer.finish());
                     }
-                    builder.set_columns(columns);
-                    let mut table = builder.build();
-                    table.with(tabled::Style::ascii());
-                    output.push_str(&table.to_string());
                 }
-            }
+                _ => {
+                    if !self.rows.is_empty() {
+                        let mut builder = tabled::builder::Builder::new();
+
+                        for r in &self.rows {
+                            let mut record = vec![r.time.to_string()];
+                            for p in &r.parameters {
+                                record.push(p.format(options))
+                            }
+
+                            builder.add_record(record);
+                        }
+
+                        let r = self.rows.first().expect("expected at least one row");
+                        let mut columns = vec![r.time.to_string()];
+                        for p in &r.parameters {
+                            columns.push(p.header());
+                        }
+                        builder.set_columns(columns);
+                        let mut table = builder.build();
+                        table.with(tabled::Style::ascii());
+                        output.push_str(&table.to_string());
+                    }
+                }
+            },
         }
 
         output
@@ -248,7 +290,7 @@ impl ForecastParameter {
             ForecastParameter::WeatherCode(_) => "Weather Code",
             ForecastParameter::FreezingLevelHeight(_) => "Freezing Level",
             ForecastParameter::Wind10m { .. } => "Wind",
-            ForecastParameter::AccumulatedPrecipitation(_) => "Accumulated Precipitation",
+            ForecastParameter::AccumulatedPrecipitation(_) => "Precipitation",
         }
         .to_string()
     }
@@ -259,12 +301,12 @@ impl FormatForecast for ForecastParameter {
         match self {
             ForecastParameter::WeatherCode(code) => match options.detail {
                 FormatDetail::Short(_) => format!("C{:.0}", *code as u8),
-                FormatDetail::Long => format!("{}", code),
+                FormatDetail::Long(_) => format!("{}", code),
             },
 
             ForecastParameter::FreezingLevelHeight(height) => match options.detail {
                 FormatDetail::Short(_) => format!("F{:.0}", (height / 100.0).round()),
-                FormatDetail::Long => format!("{:.0}m", height.round()),
+                FormatDetail::Long(_) => format!("{:.0}m", height.round()),
             },
             ForecastParameter::Wind10m { speed, direction } => match options.detail {
                 FormatDetail::Short(_) => format!(
@@ -272,13 +314,13 @@ impl FormatForecast for ForecastParameter {
                     (speed / 10.0).round(),
                     (direction / 10.0).round()
                 ),
-                FormatDetail::Long => {
+                FormatDetail::Long(_) => {
                     format!("{:.0} km/h at {:.0}°", speed.round(), direction.round())
                 }
             },
             ForecastParameter::AccumulatedPrecipitation(precip) => match options.detail {
                 FormatDetail::Short(_) => format!("P{:.0}", precip.round()),
-                FormatDetail::Long => format!("{:.1}mm", precip.round()),
+                FormatDetail::Long(_) => format!("{:.1}mm", precip.round()),
             },
         }
     }
@@ -425,12 +467,43 @@ async fn process_email(
     };
 
     let message: String = forecast_output.format(&request.format);
+    let (plain_message, html_message): (String, Option<String>) =
+        if let FormatDetail::Long(long) = &request.format.detail {
+            if let Some(LongFormatStyle::Html) = long.style {
+                let mut plain_long = long.clone();
+                let mut plain_format = request.format.clone();
+                plain_long.style = Some(LongFormatStyle::PlainText);
+                plain_format.detail = FormatDetail::Long(plain_long);
+
+                let plain_message = forecast_output.format(&plain_format);
+                (plain_message, Some(message))
+            } else {
+                (message, None)
+            }
+        } else {
+            (message, None)
+        };
 
     tracing::info!("Sending reply for email {:?}", received_email);
 
-    tracing::info!("message (len: {}):\n{}", message.len(), message);
+    tracing::info!(
+        "plain_message (len: {}):\n{}",
+        plain_message.len(),
+        plain_message
+    );
+    if let Some(html_message) = &html_message {
+        tracing::info!(
+            "html_message (len: {}):\n{}",
+            html_message.len(),
+            html_message
+        );
+    }
 
-    Ok(Reply::from_received(received_email.clone(), message))
+    Ok(Reply::from_received(
+        received_email.clone(),
+        plain_message,
+        html_message,
+    ))
 }
 
 async fn process_emails_impl(
@@ -448,12 +521,14 @@ async fn process_emails_impl(
                 ProcessEmailError::NoPosition => Reply::from_received(
                     received_email,
                     "No forecast position specified".to_string(),
+                    None,
                 ),
                 ProcessEmailError::Unexpected(error) => {
                     tracing::error!("Unexpected error occurred: {:?}", error);
                     Reply::from_received(
                         received_email,
                         "An error occurred while processing your request".to_string(),
+                        None,
                     )
                 }
                 ProcessEmailError::Network => return Err(error.into()),

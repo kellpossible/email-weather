@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     email,
     gis::Position,
+    process::{FormatDetail, LongFormatStyle},
     receive::{self, from_account, message_id, text_body, ParseReceivedEmail},
     request::{ForecastRequest, ParsedForecastRequest},
 };
@@ -51,7 +52,15 @@ impl ParseReceivedEmail for Received {
         };
         let body = text_body(&message)?.to_string();
         let trimmed_body = trim_body(&body);
-        let forecast_request = ParsedForecastRequest::parse(trimmed_body);
+
+        let mut forecast_request = ParsedForecastRequest::parse(trimmed_body);
+
+        // Default to Html style if format detail is long.
+        if let FormatDetail::Long(long) = &mut forecast_request.request.format.detail {
+            if long.style.is_none() {
+                long.style = Some(LongFormatStyle::Html);
+            }
+        }
 
         Ok(Self {
             from,
