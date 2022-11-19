@@ -1,9 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    hash::Hash,
 };
 
+pub mod level;
+
 use chrono::NaiveDateTime;
+use level::{Level, LevelField, LevelVariable};
 use reqwest::{Method, StatusCode};
 use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
 
@@ -253,6 +257,104 @@ pub enum HourlyVariable {
     FreezingLevelHeight,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum PressureLevel {
+    L1000 = 1000,
+    L975 = 975,
+    L950 = 950,
+    L925 = 925,
+    L900 = 900,
+    L850 = 850,
+    L800 = 800,
+    L700 = 700,
+    L600 = 600,
+    L500 = 500,
+    L400 = 400,
+    L300 = 300,
+    L250 = 250,
+    L200 = 200,
+    L150 = 150,
+    L100 = 100,
+    L70 = 70,
+    L50 = 50,
+    L30 = 30,
+}
+
+impl PressureLevel {
+    /// Return pressure in `hPa`.
+    pub fn pressure(&self) -> f32 {
+        match self {
+            Self::L1000 => 1000.0,
+            Self::L975 => 975.0,
+            Self::L950 => 950.0,
+            Self::L925 => 925.0,
+            Self::L900 => 900.0,
+            Self::L850 => 850.0,
+            Self::L800 => 800.0,
+            Self::L700 => 700.0,
+            Self::L600 => 600.0,
+            Self::L500 => 500.0,
+            Self::L400 => 400.0,
+            Self::L300 => 300.0,
+            Self::L250 => 250.0,
+            Self::L200 => 200.0,
+            Self::L150 => 150.0,
+            Self::L100 => 100.0,
+            Self::L70 => 70.0,
+            Self::L50 => 50.0,
+            Self::L30 => 30.0,
+        }
+    }
+}
+
+impl Level for PressureLevel {
+    fn enumerate() -> Vec<Self> {
+        vec![
+            Self::L1000,
+            Self::L975,
+            Self::L950,
+            Self::L925,
+            Self::L900,
+            Self::L850,
+            Self::L800,
+            Self::L700,
+            Self::L600,
+            Self::L500,
+            Self::L400,
+            Self::L300,
+            Self::L250,
+            Self::L200,
+            Self::L150,
+            Self::L100,
+            Self::L70,
+            Self::L50,
+            Self::L30,
+        ]
+    }
+}
+
+pub type PressureTemperature = LevelVariable<PressureLevel, PressureTemperatureField, f32>;
+
+#[derive(Debug)]
+pub struct PressureTemperatureField;
+
+impl LevelField<PressureLevel> for PressureTemperatureField {
+    fn name(level: &PressureLevel) -> String {
+        format!("temperature_{}hPa", *level as u32)
+    }
+}
+
+pub type PressureGeopotentialHeight =
+    LevelVariable<PressureLevel, PressureGeopotentialHeightField, f32>;
+
+pub struct PressureGeopotentialHeightField;
+
+impl LevelField<PressureLevel> for PressureGeopotentialHeightField {
+    fn name(level: &PressureLevel) -> String {
+        format!("geopotential_height_{}hPa", *level as u32)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Hourly {
     /// The times for the values in this struct's fields.
@@ -391,6 +493,9 @@ pub struct Hourly {
     /// + Unit: `meters`
     #[serde(rename = "freezinglevel_height")]
     pub freezing_level_height: Option<Vec<f32>>,
+
+    #[serde(flatten)]
+    pub pressure_temperature: PressureTemperature,
 }
 
 /// Deserialize date time in ISO8601 format without seconds or timezone.
@@ -728,7 +833,8 @@ mod test {
     "time": [
       "2022-10-04T00:00",
       "2022-10-04T01:00"
-    ]
+    ],
+    "temperature_1000hPa": 10.0
   },
   "hourly_units": {
     "freezinglevel_height": "m",
