@@ -463,6 +463,7 @@ async fn process_email(
                     ForecastParameter::AccumulatedPrecipitation(acc_precipitation),
                 ],
             });
+            acc_precipitation = 0.0;
         }
         i += 1;
     }
