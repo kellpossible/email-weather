@@ -24,6 +24,19 @@ where
     }
 }
 
+impl<L, LF, T> Clone for LevelVariable<L, LF, T>
+where
+    L: Clone,
+    T: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            values: self.values.clone(),
+            level_kind: self.level_kind.clone(),
+        }
+    }
+}
+
 impl<L, LF, T> LevelVariable<L, LF, T> {
     pub fn new(values: HashMap<L, T>) -> Self {
         Self {

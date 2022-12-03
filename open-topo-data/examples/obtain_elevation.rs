@@ -5,8 +5,8 @@ async fn main() {
     let terrain_elevation = open_topo_data::obtain_elevation(
         &http_client,
         &open_topo_data::Parameters {
-            latitude: -43.5138334,
-            longitude: 170.3397567,
+            latitude: -43.513832,
+            longitude: 170.33975,
             dataset: open_topo_data::Dataset::Mapzen,
         },
     )

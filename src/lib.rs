@@ -5,6 +5,7 @@
 #![allow(clippy::missing_errors_doc)]
 
 pub mod email;
+pub mod forecast_service;
 pub mod fs;
 pub mod gis;
 pub mod inreach;
@@ -22,3 +23,4 @@ pub mod serve_http;
 pub mod smtp;
 pub mod task;
 pub mod time;
+pub mod topo_data_service;

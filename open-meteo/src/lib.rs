@@ -573,7 +573,7 @@ impl LevelField<PressureLevel> for PressureGeopotentialHeightField {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Hourly {
     /// The times for the values in this struct's fields.
     // -   #[serde(deserialize_with = "naive_times_deserialize")]
@@ -848,7 +848,7 @@ impl<'de> Deserialize<'de> for Hourly {
 #[serde(rename_all = "snake_case")]
 pub enum DailyWeatherVariable {}
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TemperatureUnit {
     Celcius,
@@ -861,7 +861,7 @@ impl Default for TemperatureUnit {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename = "snake_case")]
 pub enum WindspeedUnit {
     Kmh,
@@ -876,7 +876,7 @@ impl Default for WindspeedUnit {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrecipitationUnit {
     Mm,
@@ -889,7 +889,7 @@ impl Default for PrecipitationUnit {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename = "snake_case")]
 pub enum TimeFormat {
     Iso8601,
@@ -906,7 +906,7 @@ impl Default for TimeFormat {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TimeZone {
     /// The position coordinates will be automatically resolved to the local time zone.
     Auto,
@@ -933,7 +933,7 @@ impl Serialize for TimeZone {
     }
 }
 
-#[derive(Debug, buildstructor::Builder)]
+#[derive(Debug, PartialEq, buildstructor::Builder)]
 pub struct ForecastParameters {
     /// Geographical WGS84 latitude of the location.
     pub latitude: f32,
@@ -1010,7 +1010,7 @@ pub struct CurrentWeather {
     wind_direction: u16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Forecast {
     /// Geographical WGS84 latitude of the center of the weather grid-cell which was used to
     /// generate this forecast. This coordinate might be up to 5 km away..
@@ -1054,10 +1054,10 @@ struct ErrorMessage {
     reason: String,
 }
 
-pub async fn obtain_forecast(
+pub async fn obtain_forecast_json(
     client: &reqwest::Client,
     parameters: &ForecastParameters,
-) -> Result<Forecast, Error> {
+) -> Result<String, Error> {
     let query = serde_urlencoded::to_string(&parameters)?;
     let url = format!("https://api.open-meteo.com/v1/forecast?{}", query);
     tracing::trace!("GET {}", url);
@@ -1065,7 +1065,7 @@ pub async fn obtain_forecast(
     let response = client.request(Method::GET, url).send().await?;
 
     if response.status().is_success() {
-        response.json().await.map_err(Error::from)
+        response.text().await.map_err(Error::from)
     } else {
         Err(Error::ResponseStatusNotSuccessful {
             code: response.status(),
@@ -1076,6 +1076,15 @@ pub async fn obtain_forecast(
                 .unwrap_or_default(),
         })
     }
+}
+
+pub async fn obtain_forecast(
+    client: &reqwest::Client,
+    parameters: &ForecastParameters,
+) -> Result<Forecast, Error> {
+    obtain_forecast_json(client, parameters)
+        .await
+        .and_then(|json| Ok(serde_json::from_str(&json)?))
 }
 
 #[cfg(test)]

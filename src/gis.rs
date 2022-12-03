@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use serde::{Deserialize, Serialize};
 
 /// Position
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct Position<CRS = WGS84> {
     /// Latitude of the position (in degrees).
     pub latitude: f32,
@@ -13,6 +13,18 @@ pub struct Position<CRS = WGS84> {
     pub longitude: f32,
     #[serde(skip)]
     coordinate_reference_system: PhantomData<CRS>,
+}
+
+impl<CRS> std::fmt::Debug for Position<CRS>
+where
+    CRS: CoordinateReferenceSystem,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("Position<{}>", CRS::name()))
+            .field("latitude", &self.latitude)
+            .field("longitude", &self.longitude)
+            .finish()
+    }
 }
 
 impl<CRS> Position<CRS> {
@@ -26,6 +38,18 @@ impl<CRS> Position<CRS> {
     }
 }
 
+/// Coorindate reference system.
+pub trait CoordinateReferenceSystem {
+    /// Display name.
+    fn name() -> &'static str;
+}
+
 /// WGS84 Coordinate system.
 #[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct WGS84;
+
+impl CoordinateReferenceSystem for WGS84 {
+    fn name() -> &'static str {
+        "WGS84"
+    }
+}

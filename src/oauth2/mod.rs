@@ -1,6 +1,7 @@
+//! Library for handling oauth2 authentication.
+
 use std::{
     path::{Path, PathBuf},
-    pin::Pin,
     sync::Arc,
     time::Duration,
 };
@@ -32,10 +33,12 @@ pub use service_account::ServiceAccountFlow;
 
 use crate::secrets::OauthSecrets;
 
+/// Method used to redirect the user to obtain their consent for authentication.
 pub enum ConsentRedirect {
     /// Out of band redirect, exchange code using user's clipboard.
     /// **Warning**: Google has deprecated this method.
     OutOfBand,
+    /// With a http redirect/request.
     Http {
         /// Channel to recieve redirect result from http server.
         redirect_rx: Arc<Mutex<mpsc::Receiver<RedirectParameters>>>,

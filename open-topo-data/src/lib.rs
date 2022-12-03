@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Dataset {
     #[serde(rename = "aster30m")]
@@ -78,6 +78,7 @@ pub enum Error {
     NoResults,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Parameters {
     pub latitude: f32,
     pub longitude: f32,

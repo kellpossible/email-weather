@@ -16,10 +16,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
+    forecast_service,
     receive::{Received, ReceivedKind},
     reply::Reply,
     task::run_retry_log_errors,
-    time,
+    time, topo_data_service,
 };
 
 #[derive(PartialEq, Debug)]
@@ -334,8 +335,9 @@ impl FormatForecast for ForecastParameter {
     }
 }
 
-async fn process_email(
-    http_client: &reqwest::Client,
+async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>(
+    forecast_service: &FS,
+    topo_data_service: &TDS,
     received_email: &ReceivedKind,
 ) -> Result<Reply, ProcessEmailError> {
     let request = &received_email.forecast_request().request;
@@ -359,10 +361,10 @@ async fn process_email(
         "Obtaining forecast for forecast parameters {}",
         serde_json::to_string_pretty(&forecast_parameters).map_err(eyre::Error::from)?
     );
-    let forecast: open_meteo::Forecast =
-        open_meteo::obtain_forecast(&http_client, &forecast_parameters)
-            .await
-            .wrap_err("Error obtaining forecast")?;
+    let forecast: open_meteo::Forecast = forecast_service
+        .obtain_forecast(&forecast_parameters)
+        .await
+        .wrap_err("Error obtaining forecast")?;
     tracing::info!("Successfully obtained forecast");
 
     let hourly: Hourly = forecast
@@ -419,16 +421,14 @@ async fn process_email(
         );
     }
 
-    let terrain_elevation = match open_topo_data::obtain_elevation(
-        http_client,
-        &open_topo_data::Parameters {
+    let terrain_elevation = match topo_data_service
+        .obtain_elevation(&open_topo_data::Parameters {
             latitude: position.latitude,
             longitude: position.longitude,
             dataset: open_topo_data::Dataset::Mapzen,
-        },
-    )
-    .await
-    .wrap_err("Error obtaining terrain elevation")
+        })
+        .await
+        .wrap_err("Error obtaining terrain elevation")
     {
         Ok(terrain_elevation) => Some(terrain_elevation),
         Err(error) => {
@@ -522,29 +522,32 @@ async fn process_emails_impl(
     reply_sender: &mut yaque::Sender,
     http_client: reqwest::Client,
 ) -> eyre::Result<()> {
+    let forecast_service = forecast_service::Gateway::new(http_client.clone());
+    let topo_data_service = topo_data_service::Gateway::new(http_client);
     loop {
         let received = process_receiver.recv().await?;
         let received_email: ReceivedKind = serde_json::from_slice(&*received)?;
 
-        let reply = match process_email(&http_client, &received_email).await {
-            Ok(reply) => reply,
-            Err(error) => match &error {
-                ProcessEmailError::NoPosition => Reply::from_received(
-                    received_email,
-                    "No forecast position specified".to_string(),
-                    None,
-                ),
-                ProcessEmailError::Unexpected(error) => {
-                    tracing::error!("Unexpected error occurred: {:?}", error);
-                    Reply::from_received(
+        let reply =
+            match process_email(&forecast_service, &topo_data_service, &received_email).await {
+                Ok(reply) => reply,
+                Err(error) => match &error {
+                    ProcessEmailError::NoPosition => Reply::from_received(
                         received_email,
-                        "An error occurred while processing your request".to_string(),
+                        "No forecast position specified".to_string(),
                         None,
-                    )
-                }
-                ProcessEmailError::Network => return Err(error.into()),
-            },
-        };
+                    ),
+                    ProcessEmailError::Unexpected(error) => {
+                        tracing::error!("Unexpected error occurred: {:?}", error);
+                        Reply::from_received(
+                            received_email,
+                            "An error occurred while processing your request".to_string(),
+                            None,
+                        )
+                    }
+                    ProcessEmailError::Network => return Err(error.into()),
+                },
+            };
         let reply_bytes = serde_json::to_vec(&reply).wrap_err("Failed to serialize reply")?;
         reply_sender.send(&reply_bytes).await?;
 
@@ -583,7 +586,20 @@ pub async fn process_emails(
 mod test {
     use std::convert::TryFrom;
 
-    use super::WindDirection;
+    use mockall::predicate::eq;
+    use once_cell::sync::Lazy;
+    use open_meteo::{Forecast, ForecastParameters, GroundLevel, HourlyVariable};
+
+    use crate::{
+        forecast_service,
+        gis::Position,
+        inreach,
+        reply::{self, Reply},
+        request::ParsedForecastRequest,
+        topo_data_service,
+    };
+
+    use super::{process_email, WindDirection};
 
     #[test]
     fn test_wind_direction_from_float() {
@@ -611,5 +627,60 @@ mod test {
         assert_eq!(WindDirection::NW, WindDirection::try_from(310.0).unwrap());
         assert_eq!(WindDirection::NW, WindDirection::try_from(315.0).unwrap());
         assert_eq!(WindDirection::NW, WindDirection::try_from(325.0).unwrap());
+    }
+
+    static FORECAST_MT_COOK: Lazy<Forecast> = Lazy::new(|| {
+        serde_json::from_str(&std::fs::read_to_string("fixtures/forecast_mt_cook.json").unwrap())
+            .unwrap()
+    });
+
+    /// Test where the received email is from an inreach, and the user is requesting a forecast for
+    /// a location other than where the inreach is located.
+    #[tokio::test]
+    async fn test_process_email_inreach_parsed_location() {
+        let forecast_request = ParsedForecastRequest::parse("-43.513832,170.33975");
+        assert!(forecast_request.errors.is_empty());
+        let referral_url: url::Url = "https://example.org".parse().unwrap();
+        let received_email = &crate::receive::ReceivedKind::Inreach(inreach::email::Received {
+            from_name: "Test".to_owned(),
+            referral_url: referral_url.clone(),
+            position: Position::new(-43.75905, 170.115),
+            forecast_request,
+        });
+        let mut forecast_service = forecast_service::MockPort::new();
+        forecast_service
+            .expect_obtain_forecast()
+            .with(eq(ForecastParameters::builder()
+                .latitude(-43.513832)
+                .longitude(170.33975)
+                .hourly_entry(HourlyVariable::FreezingLevelHeight)
+                .hourly_entry(HourlyVariable::WindSpeed(GroundLevel::L10))
+                .hourly_entry(HourlyVariable::WindDirection(GroundLevel::L10))
+                .hourly_entry(HourlyVariable::WeatherCode)
+                .hourly_entry(HourlyVariable::Precipitation)
+                .timezone(open_meteo::TimeZone::Auto)
+                .build()))
+            .return_once(|_| Ok(FORECAST_MT_COOK.clone()));
+        let mut topo_data_service = topo_data_service::MockPort::new();
+
+        topo_data_service
+            .expect_obtain_elevation()
+            .with(eq(open_topo_data::Parameters {
+                latitude: -43.513832,
+                longitude: 170.33975,
+                dataset: open_topo_data::Dataset::Mapzen,
+            }))
+            .return_once(|_| Ok(2216.0));
+
+        let reply = process_email(&forecast_service, &topo_data_service, received_email)
+            .await
+            .unwrap();
+
+        let reply: reply::InReach = match reply {
+            Reply::InReach(reply) => reply,
+            _ => panic!("Unexpected reply: {:?}", reply),
+        };
+
+        assert_eq!(referral_url, reply.referral_url);
     }
 }
