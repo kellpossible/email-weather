@@ -8,7 +8,6 @@ use std::borrow::Cow;
 
 use crate::{
     gis::Position,
-    process::{FormatDetail, ShortFormatDetail},
     receive::{self, text_body, ParseReceivedEmail},
     request::ParsedForecastRequest,
 };
@@ -129,7 +128,7 @@ impl Received {
             eyre::bail!("Unable to parse email text as a complete inreach message")
         }
 
-        let mut forecast_request = ParsedForecastRequest::parse(&message_body);
+        let forecast_request = ParsedForecastRequest::parse(&message_body);
         Ok(Self {
             from_name: from_name.unwrap(),
             referral_url: referral_url.unwrap(),

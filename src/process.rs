@@ -20,7 +20,7 @@ use crate::{
     forecast_service,
     receive::{Received, ReceivedKind},
     reply::Reply,
-    request::ForecastRequest,
+    request::{ForecastRequest, ParsedForecastRequest},
     task::run_retry_log_errors,
     time, topo_data_service,
 };
@@ -146,12 +146,22 @@ pub struct FormatForecastOptions {
 }
 
 struct ForecastOutput {
+    errors: Vec<String>,
     total_timezone_offset: chrono::Duration,
     forecast_elevation: f32,
     terrain_elevation: Option<f32>,
     rows: Vec<ForecastRow>,
 }
 
+fn newline(format_detail: &FormatDetail) -> &str {
+    match format_detail {
+        FormatDetail::Short(_) => "\n",
+        FormatDetail::Long(long) => match long.style {
+            Some(LongFormatStyle::Html) => "<br>",
+            _ => "\n",
+        },
+    }
+}
 impl FormatForecast for ForecastOutput {
     fn format(&self, options: &FormatForecastOptions) -> String {
         let mut output = String::new();
@@ -187,7 +197,24 @@ impl FormatForecast for ForecastOutput {
             });
         }
 
-        output.push('\n');
+        if !self.errors.is_empty() {
+            if let FormatDetail::Short(_) = options.detail {
+                output.push_str(" E")
+            }
+        }
+
+        output.push_str(newline(&options.detail));
+
+        if !self.errors.is_empty() {
+            if let FormatDetail::Long(_) = options.detail {
+                output.push_str("These errors occured:");
+                for error in &self.errors {
+                    output.push_str(&error);
+                    output.push_str(newline(&options.detail));
+                }
+                output.push_str(newline(&options.detail));
+            }
+        }
 
         match &options.detail {
             FormatDetail::Short(short) => {
@@ -201,7 +228,7 @@ impl FormatForecast for ForecastOutput {
                     }
 
                     if i > 0 {
-                        output.push('\n');
+                        output.push_str(newline(&options.detail))
                     }
                     output.push_str(&row_output);
                 }
@@ -339,11 +366,11 @@ impl FormatForecast for ForecastParameter {
 
 /// Validate the request from a received email, report any problems via logging, and transform it to a valid
 /// request.
-fn validate_transform_request(received_email: &ReceivedKind) -> Cow<'_, ForecastRequest> {
+fn validate_transform_request(received_email: &ReceivedKind) -> Cow<'_, ParsedForecastRequest> {
     match received_email {
         ReceivedKind::Inreach(email) => {
-            let mut request = email.forecast_request.request.clone();
-            let format = &mut request.format;
+            let mut request = email.forecast_request.clone();
+            let format = &mut request.request.format;
             match &mut format.detail {
                 FormatDetail::Short(short) => {
                     // Impose a message length limit of 160 characters for inreach.
@@ -371,7 +398,7 @@ fn validate_transform_request(received_email: &ReceivedKind) -> Cow<'_, Forecast
 
             Cow::Owned(request)
         }
-        _ => Cow::Borrowed(&received_email.forecast_request().request),
+        _ => Cow::Borrowed(&received_email.forecast_request()),
     }
 }
 
@@ -380,7 +407,8 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
     topo_data_service: &TDS,
     received_email: &ReceivedKind,
 ) -> Result<Reply, ProcessEmailError> {
-    let request = validate_transform_request(received_email);
+    let parsed_request = validate_transform_request(received_email);
+    let request = &parsed_request.request;
 
     let position = request
         .position
@@ -510,7 +538,14 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
         i += 1;
     }
 
+    let errors: Vec<String> = parsed_request
+        .errors
+        .iter()
+        .map(|error| format!("Error parsing request: {}", error))
+        .collect();
+
     let forecast_output = ForecastOutput {
+        errors,
         total_timezone_offset: total_offset,
         forecast_elevation: forecast.elevation,
         terrain_elevation,

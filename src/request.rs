@@ -5,7 +5,8 @@ use std::str::FromStr;
 
 use chumsky::{
     prelude::Simple,
-    primitive::{choice, end, filter, just},
+    primitive::{choice, end, just},
+    recovery::skip_until,
     text::{self, TextParser},
     Parser,
 };
@@ -31,7 +32,7 @@ pub struct ForecastRequest {
 impl ForecastRequest {
     /// Parse request from a string.
     pub fn parse(request_string: &str) -> (Self, Vec<Simple<char>>) {
-        let (request, errors) = request_parser().parse_recovery(request_string);
+        let (request, errors) = request_parser().parse_recovery(request_string.to_uppercase());
         (request.unwrap_or_default(), errors)
     }
 }
@@ -74,18 +75,24 @@ fn request_parser() -> impl Parser<char, ForecastRequest, Error = Simple<char>> 
     enum Expr {
         Position(Position),
         Format(FormatForecastOptions),
+        Invalid,
     }
 
     fn fold_expr(mut request: ForecastRequest, expr: Expr) -> ForecastRequest {
         match expr {
             Expr::Position(position) => request.position = Some(position),
             Expr::Format(f) => request.format = f,
-        }
+            Expr::Invalid => {}
+        };
         request
     }
 
-    let fmt = format_parser().map(Expr::Format);
-    let pos = position_parser().map(Expr::Position);
+    let pos = position_parser()
+        .map(Expr::Position)
+        .recover_with(skip_until([' '], |_| Expr::Invalid));
+    let fmt = format_parser()
+        .map(Expr::Format)
+        .recover_with(skip_until([' '], |_| Expr::Invalid));
 
     pos.or_not()
         .map(|expr_option| expr_option.into_iter().collect::<Vec<Expr>>())
@@ -94,25 +101,36 @@ fn request_parser() -> impl Parser<char, ForecastRequest, Error = Simple<char>> 
         .map(|exprs| (ForecastRequest::default(), exprs))
         .foldl(fold_expr)
         .padded()
-        .then_ignore(end())
+        .then_ignore(end().recover_with(skip_until([' '], |_| ())))
         .labelled("request")
 }
 
+/// Parses a long message format specification.
+///
+/// For example:
+/// + `L` - Long with no specified style.
+/// + `LH` - Long with [`LongFormatStyle::Html`] style.
+/// + `LP` - Long with [`LongFormatStyle::PlainText`] style.
 fn long_format_parser() -> impl Parser<char, LongFormatDetail, Error = Simple<char>> {
-    let html_style = filter(|c: &char| c == &'h' || c == &'H').map(|_| LongFormatStyle::Html);
-    let plain_style = filter(|c: &char| c == &'p' || c == &'P').map(|_| LongFormatStyle::PlainText);
+    let html_style = just('H').map(|_| LongFormatStyle::Html);
+    let plain_style = just('P').map(|_| LongFormatStyle::PlainText);
 
-    filter(|c: &char| c == &'l' || c == &'L')
+    just('L')
         .ignore_then(choice((html_style, plain_style)).or_not())
         .map(|style| LongFormatDetail { style })
 }
 
+/// Parses a short message format specification.
+///
+/// For example:
+/// + `S` - Short with no specified length limit.
+/// + `S100` - Short with a length limit of 100.
 fn short_format_parser() -> impl Parser<char, ShortFormatDetail, Error = Simple<char>> {
     let length_limit = text::int(10).try_map(|s: String, span| {
         s.parse::<usize>()
             .map_err(|e| Simple::custom(span, e.to_string()))
     });
-    filter(|c: &char| c == &'s' || c == &'S')
+    just('S')
         .ignore_then(length_limit.or_not())
         .map(|limit_option| {
             let mut short = ShortFormatDetail::default();
@@ -121,6 +139,13 @@ fn short_format_parser() -> impl Parser<char, ShortFormatDetail, Error = Simple<
         })
 }
 
+/// Parses a message format specification.
+///
+/// For example:
+/// + `MS` - [`FormatDetail::Short`] message format detail. See [`short_format_parser()`] for more
+///   variations.
+/// + `ML` - [`FormatDetail::Long`] message format. See [`long_format_parser()`] for more
+///   variations.
 fn format_parser() -> impl Parser<char, FormatForecastOptions, Error = Simple<char>> {
     enum Expr {
         FormatDetail(FormatDetail),
@@ -133,7 +158,7 @@ fn format_parser() -> impl Parser<char, FormatForecastOptions, Error = Simple<ch
         options
     }
 
-    let format_ident = filter(|c: &char| c == &'m' || c == &'M');
+    let format_ident = just('M');
 
     let short = short_format_parser().map(FormatDetail::Short);
     let long = long_format_parser().map(FormatDetail::Long);
@@ -327,13 +352,48 @@ mod test {
     }
 
     #[test]
+    fn test_parse_request_recover_position() {
+        let (request, errors) = ForecastRequest::parse("-37.8245005,145.3032913 XXXXXX ");
+        assert!(!errors.is_empty());
+        assert_eq!(
+            Some(Position::new(-37.8245005, 145.3032913)),
+            request.position
+        );
+
+        let (request, errors) = ForecastRequest::parse("-37.8245005,145.3032913 XXXXXX");
+        assert!(!errors.is_empty());
+        assert_eq!(
+            Some(Position::new(-37.8245005, 145.3032913)),
+            request.position
+        );
+
+    }
+
+    #[test]
+    fn test_parse_request_recover_position_format() {
+        let (request, errors) = ForecastRequest::parse("-37.8245005,145.3032913 ML LKJDFLSKDJF");
+        assert!(!errors.is_empty());
+        assert_eq!(
+            Some(Position::new(-37.8245005, 145.3032913)),
+            request.position
+        );
+        assert!(matches!(request.format.detail, FormatDetail::Long(_)));
+
+        let (request, errors) = ForecastRequest::parse("-37.8245005,145.3032913 ML LKJDFLSKDJF ");
+        assert!(!errors.is_empty());
+        assert_eq!(
+            Some(Position::new(-37.8245005, 145.3032913)),
+            request.position
+        );
+        assert!(matches!(request.format.detail, FormatDetail::Long(_)));
+    }
+
+    #[test]
     fn test_parse_format_short_success() {
         let expected_format_options = FormatForecastOptions {
             detail: FormatDetail::Short(ShortFormatDetail::default()),
             ..FormatForecastOptions::default()
         };
-        let format_options = format_parser().parse("ms").unwrap();
-        assert_eq!(expected_format_options, format_options);
         let format_options = format_parser().parse("MS").unwrap();
         assert_eq!(expected_format_options, format_options);
     }
@@ -344,8 +404,6 @@ mod test {
             detail: FormatDetail::Long(LongFormatDetail::default()),
             ..FormatForecastOptions::default()
         };
-        let format_options = format_parser().parse("ml").unwrap();
-        assert_eq!(expected_format_options, format_options);
         let format_options = format_parser().parse("ML").unwrap();
         assert_eq!(expected_format_options, format_options);
     }
