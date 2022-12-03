@@ -1,6 +1,7 @@
 //! See [`process_emails()`].
 
 use std::{
+    borrow::Cow,
     collections::HashSet,
     convert::TryFrom,
     fmt::{Display, Write},
@@ -19,6 +20,7 @@ use crate::{
     forecast_service,
     receive::{Received, ReceivedKind},
     reply::Reply,
+    request::ForecastRequest,
     task::run_retry_log_errors,
     time, topo_data_service,
 };
@@ -335,12 +337,50 @@ impl FormatForecast for ForecastParameter {
     }
 }
 
+/// Validate the request from a received email, report any problems via logging, and transform it to a valid
+/// request.
+fn validate_transform_request(received_email: &ReceivedKind) -> Cow<'_, ForecastRequest> {
+    match received_email {
+        ReceivedKind::Inreach(email) => {
+            let mut request = email.forecast_request.request.clone();
+            let format = &mut request.format;
+            match &mut format.detail {
+                FormatDetail::Short(short) => {
+                    // Impose a message length limit of 160 characters for inreach.
+                    if let Some(limit) = &mut short.length_limit {
+                        if *limit > 160 {
+                            tracing::warn!(
+                                "User specified limit ({limit}) is too large, \
+                        Inreach only supports up to 160 characters per message"
+                            );
+                            *limit = 160;
+                        }
+                    } else {
+                        short.length_limit = Some(160);
+                    }
+                }
+                _ => {
+                    tracing::warn!(
+                        "User specified format detail {:?} is not available, \
+                        InReach only supports Short format detail.",
+                        format.detail
+                    );
+                    format.detail = FormatDetail::Short(ShortFormatDetail::default());
+                }
+            }
+
+            Cow::Owned(request)
+        }
+        _ => Cow::Borrowed(&received_email.forecast_request().request),
+    }
+}
+
 async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>(
     forecast_service: &FS,
     topo_data_service: &TDS,
     received_email: &ReceivedKind,
 ) -> Result<Reply, ProcessEmailError> {
-    let request = &received_email.forecast_request().request;
+    let request = validate_transform_request(received_email);
 
     let position = request
         .position
@@ -594,8 +634,9 @@ mod test {
         forecast_service,
         gis::Position,
         inreach,
+        process::{FormatDetail, FormatForecastOptions, ShortFormatDetail},
         reply::{self, Reply},
-        request::ParsedForecastRequest,
+        request::{ForecastRequest, ParsedForecastRequest},
         topo_data_service,
     };
 
@@ -638,8 +679,15 @@ mod test {
     /// a location other than where the inreach is located.
     #[tokio::test]
     async fn test_process_email_inreach_parsed_location() {
-        let forecast_request = ParsedForecastRequest::parse("-43.513832,170.33975");
-        assert!(forecast_request.errors.is_empty());
+        let forecast_request = ParsedForecastRequest {
+            request: ForecastRequest {
+                position: Some(Position::new(-43.513832, 170.33975)),
+                format: FormatForecastOptions {
+                    detail: FormatDetail::Short(ShortFormatDetail::default()),
+                },
+            },
+            ..ParsedForecastRequest::default()
+        };
         let referral_url: url::Url = "https://example.org".parse().unwrap();
         let received_email = &crate::receive::ReceivedKind::Inreach(inreach::email::Received {
             from_name: "Test".to_owned(),
@@ -682,5 +730,6 @@ mod test {
         };
 
         assert_eq!(referral_url, reply.referral_url);
+        insta::assert_snapshot!(reply.message);
     }
 }

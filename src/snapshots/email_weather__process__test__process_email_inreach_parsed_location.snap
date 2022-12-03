@@ -1,0 +1,11 @@
+---
+source: src/process.rs
+expression: reply.message
+---
+Tz+13:00 FE0 TE2216
+03T21 C2 F28 W1@32 P0
+04T03 C3 F33 W2@31 P0
+04T09 C1 F33 W2@31 P0
+04T15 C2 F33 W2@31 P0
+04T21 C1 F31 W1@31 P0
+05T03 C3 F29 W1@31 P0
