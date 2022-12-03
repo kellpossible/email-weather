@@ -366,7 +366,6 @@ mod test {
             Some(Position::new(-37.8245005, 145.3032913)),
             request.position
         );
-
     }
 
     #[test]

@@ -208,6 +208,7 @@ impl FormatForecast for ForecastOutput {
         if !self.errors.is_empty() {
             if let FormatDetail::Long(_) = options.detail {
                 output.push_str("These errors occured:");
+                output.push_str(newline(&options.detail));
                 for error in &self.errors {
                     output.push_str(&error);
                     output.push_str(newline(&options.detail));
@@ -402,9 +403,10 @@ fn validate_transform_request(received_email: &ReceivedKind) -> Cow<'_, ParsedFo
     }
 }
 
-async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>(
-    forecast_service: &FS,
-    topo_data_service: &TDS,
+async fn process_email(
+    time: &dyn time::Port,
+    forecast_service: &dyn forecast_service::Port,
+    topo_data_service: &dyn topo_data_service::Port,
     received_email: &ReceivedKind,
 ) -> Result<Reply, ProcessEmailError> {
     let parsed_request = validate_transform_request(received_email);
@@ -438,7 +440,7 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
     let hourly: Hourly = forecast
         .hourly
         .ok_or_else(|| eyre::eyre!("expected hourly forecast to be present"))?;
-    let time: &[chrono::NaiveDateTime] = &hourly.time;
+    let forecast_time: &[chrono::NaiveDateTime] = &hourly.time;
 
     let freezing_level_height: &[f32] = &hourly
         .freezing_level_height
@@ -459,7 +461,7 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
         .ok_or_else(|| eyre::eyre!("expected precipitation to be present"))?;
 
     if [
-        time.len(),
+        forecast_time.len(),
         freezing_level_height.len(),
         wind_speed_10m.len(),
         wind_direction_10m.len(),
@@ -474,7 +476,7 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
         return Err(eyre::eyre!("forecast hourly array lengths don't match").into());
     }
 
-    let utc_now: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();
+    let utc_now: chrono::NaiveDateTime = time.utc_now().naive_utc();
     let offset = chrono::TimeZone::offset_from_utc_datetime(&forecast.timezone, &utc_now);
     let current_local_time: chrono::NaiveDateTime =
         chrono::TimeZone::from_utc_datetime(&forecast.timezone, &utc_now).naive_local();
@@ -508,21 +510,24 @@ async fn process_email<FS: forecast_service::Port, TDS: topo_data_service::Port>
     let mut forecast_rows: Vec<ForecastRow> = Vec::with_capacity(16);
 
     // Skip times that are after the current local time.
-    let start_i: usize = time.iter().enumerate().fold(0, |acc, (i, local_time)| {
-        if current_local_time > *local_time {
-            usize::min(i + 1, time.len() - 1)
-        } else {
-            acc
-        }
-    });
+    let start_i: usize = forecast_time
+        .iter()
+        .enumerate()
+        .fold(0, |acc, (i, local_time)| {
+            if current_local_time > *local_time {
+                usize::min(i + 1, forecast_time.len() - 1)
+            } else {
+                acc
+            }
+        });
 
     let mut i = start_i;
     let mut acc_precipitation: f32 = 0.0;
-    while i <= usize::min(time.len() - 1, i + 48) {
+    while i <= usize::min(forecast_time.len() - 1, i + 48) {
         acc_precipitation += precipitation[i];
         if (i - start_i) % 6 == 0 {
             forecast_rows.push(ForecastRow {
-                time: time[i],
+                time: forecast_time[i],
                 parameters: vec![
                     ForecastParameter::WeatherCode(weather_code[i]),
                     ForecastParameter::FreezingLevelHeight(freezing_level_height[i]),
@@ -596,6 +601,7 @@ async fn process_emails_impl(
     process_receiver: &mut yaque::Receiver,
     reply_sender: &mut yaque::Sender,
     http_client: reqwest::Client,
+    time: &dyn time::Port,
 ) -> eyre::Result<()> {
     let forecast_service = forecast_service::Gateway::new(http_client.clone());
     let topo_data_service = topo_data_service::Gateway::new(http_client);
@@ -604,7 +610,8 @@ async fn process_emails_impl(
         let received_email: ReceivedKind = serde_json::from_slice(&*received)?;
 
         let reply =
-            match process_email(&forecast_service, &topo_data_service, &received_email).await {
+            match process_email(time, &forecast_service, &topo_data_service, &received_email).await
+            {
                 Ok(reply) => reply,
                 Err(error) => match &error {
                     ProcessEmailError::NoPosition => Reply::from_received(
@@ -648,7 +655,7 @@ pub async fn process_emails(
             let http_client = http_client.clone();
             async move {
                 let (process_receiver, reply_sender) = &mut *queues.lock().await;
-                process_emails_impl(process_receiver, reply_sender, http_client).await
+                process_emails_impl(process_receiver, reply_sender, http_client, time).await
             }
         },
         shutdown_rx,
@@ -730,6 +737,7 @@ mod test {
             position: Position::new(-43.75905, 170.115),
             forecast_request,
         });
+
         let mut forecast_service = forecast_service::MockPort::new();
         forecast_service
             .expect_obtain_forecast()
@@ -744,8 +752,8 @@ mod test {
                 .timezone(open_meteo::TimeZone::Auto)
                 .build()))
             .return_once(|_| Ok(FORECAST_MT_COOK.clone()));
-        let mut topo_data_service = topo_data_service::MockPort::new();
 
+        let mut topo_data_service = topo_data_service::MockPort::new();
         topo_data_service
             .expect_obtain_elevation()
             .with(eq(open_topo_data::Parameters {
@@ -755,7 +763,11 @@ mod test {
             }))
             .return_once(|_| Ok(2216.0));
 
-        let reply = process_email(&forecast_service, &topo_data_service, received_email)
+        let mut time = crate::time::MockPort::new();
+        time.expect_utc_now()
+            .return_once(|| "2022-12-03T08:00:00Z".parse().unwrap());
+
+        let reply = process_email(&time, &forecast_service, &topo_data_service, received_email)
             .await
             .unwrap();
 
