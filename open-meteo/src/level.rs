@@ -1,11 +1,27 @@
-use std::{collections::HashMap, hash::Hash, marker::PhantomData};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+    marker::PhantomData,
+};
 
 use serde::{de::Visitor, Deserialize};
 
-#[derive(Debug)]
 pub struct LevelVariable<L, LF, T> {
-    pub values: HashMap<L, T>,
+    values: HashMap<L, T>,
     level_kind: PhantomData<LF>,
+}
+
+impl<L, LF, T> Debug for LevelVariable<L, LF, T>
+where
+    L: Debug,
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LevelVariable")
+            .field("values", &self.values)
+            .finish()
+    }
 }
 
 impl<L, LF, T> LevelVariable<L, LF, T> {
@@ -17,10 +33,25 @@ impl<L, LF, T> LevelVariable<L, LF, T> {
     }
 }
 
+impl<L, LF, T> LevelVariable<L, LF, T>
+where
+    L: Hash + Eq,
+{
+    pub fn value(&self, level: &L) -> Option<&T> {
+        self.values.get(level)
+    }
+}
+
+impl<L, LF, T> Default for LevelVariable<L, LF, T> {
+    fn default() -> Self {
+        Self::new(HashMap::default())
+    }
+}
+
 impl<'de, L, LF, T> Deserialize<'de> for LevelVariable<L, LF, T>
 where
     LF: LevelField<L>,
-    L: Level + Eq + Hash,
+    L: Level + Hash + Eq,
     T: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -31,12 +62,15 @@ where
     }
 }
 
-pub trait Level: Sized {
-    fn enumerate() -> Vec<Self>;
+pub trait Level: Sized + Clone + 'static {
+    fn enumerate() -> &'static [Self];
 }
 
-pub trait LevelField<L> {
-    fn name(level: &L) -> String;
+pub trait LevelField<L: Level> {
+    fn name(level: &L) -> &'static str;
+    fn enumerate_names() -> HashSet<&'static str> {
+        L::enumerate().iter().map(Self::name).collect()
+    }
 }
 
 struct LevelStructField<L, LF, T> {
@@ -102,12 +136,13 @@ where
         E: serde::de::Error,
     {
         L::enumerate()
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|level| {
-                let name = LF::name(&level);
-                (level, name)
+                let field_name = LF::name(&level);
+                (level, field_name)
             })
-            .find(|(_, field_name)| field_name == v)
+            .find(|(_, field_name)| *field_name == v)
             .ok_or_else(|| serde::de::Error::custom(format!("Unexpected field: {}", v)))
             .map(|(level, _)| LevelStructField::new(level))
     }
@@ -149,8 +184,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::fmt::Display;
+    use std::{collections::HashMap, fmt::Display};
 
+    use once_cell::sync::Lazy;
     use serde_json::json;
 
     use super::{Level, LevelField, LevelVariable};
@@ -171,16 +207,24 @@ mod test {
     }
 
     impl Level for TestLevel {
-        fn enumerate() -> Vec<Self> {
-            vec![Self::One, Self::Two]
+        fn enumerate() -> &'static [Self] {
+            &[Self::One, Self::Two]
         }
     }
 
     struct TestLevelField;
 
+    static TEST_LEVEL_FIELD_NAMES: Lazy<HashMap<TestLevel, String>> = Lazy::new(|| {
+        TestLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(|level| (level, format!("test_{}", level)))
+            .collect()
+    });
+
     impl LevelField<TestLevel> for TestLevelField {
-        fn name(level: &TestLevel) -> String {
-            format!("test_{}", level)
+        fn name(level: &TestLevel) -> &'static str {
+            TEST_LEVEL_FIELD_NAMES.get(level).unwrap()
         }
     }
 

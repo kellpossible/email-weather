@@ -8,8 +8,13 @@ pub mod level;
 
 use chrono::NaiveDateTime;
 use level::{Level, LevelField, LevelVariable};
+use once_cell::sync::Lazy;
 use reqwest::{Method, StatusCode};
-use serde::{de::Visitor, ser::SerializeMap, Deserialize, Serialize};
+use serde::{
+    de::{IntoDeserializer, Visitor},
+    ser::SerializeMap,
+    Deserialize, Deserializer, Serialize,
+};
 
 /// WMO Weather interpretation code (WW)
 #[derive(Clone, Copy, Debug)]
@@ -183,19 +188,15 @@ impl Display for WeatherCode {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum HourlyVariable {
     /// This isn't a selectable value, but it can be returned in [Forecast::hourly_units].
     Time,
     /// Requests [Hourly::temperature_2m].
-    #[serde(rename = "temperature_2m")]
     Temperature2m,
     /// Requests [Hourly::relative_humidity_2m].
-    #[serde(rename = "relativehumidity_2m")]
     RelativeHumidity2m,
     /// Requests [Hourly::dewpoint_2m].
-    #[serde(rename = "dewpoint_2m")]
     Dewpoint2m,
     /// Requests [Hourly::apparent_temperature].
     ApparentTemperature,
@@ -204,58 +205,259 @@ pub enum HourlyVariable {
     /// Requests [Hourly::surface_pressure].
     SurfacePressure,
     /// Requests [Hourly::cloud_cover].
-    #[serde(rename = "cloudcover")]
     CloudCover,
     /// Requests [Hourly::cloud_cover_low].
-    #[serde(rename = "cloudcover_low")]
     CloudCoverLow,
     /// Requests [Hourly::cloud_cover_low].
-    #[serde(rename = "cloudcover_mid")]
     CloudCoverMid,
     /// Requests [Hourly::cloud_cover_high].
-    #[serde(rename = "cloudcover_high")]
     CloudCoverHigh,
-    /// Requests [Hourly::wind_speed_10m].
-    #[serde(rename = "windspeed_10m")]
-    WindSpeed10m,
-    /// Requests [Hourly::wind_speed_80m].
-    #[serde(rename = "windspeed_80m")]
-    WindSpeed80m,
-    /// Requests [Hourly::wind_speed_120m].
-    #[serde(rename = "windspeed_120m")]
-    WindSpeed120m,
-    /// Requests [Hourly::wind_speed_180m].
-    #[serde(rename = "windspeed_180m")]
-    WindSpeed180m,
-    /// Requests [Hourly::wind_direction_10m].
-    #[serde(rename = "winddirection_10m")]
-    WindDirection10m,
-    /// Requests [Hourly::wind_direction_80m].
-    #[serde(rename = "winddirection_80m")]
-    WindDirection80m,
-    /// Requests [Hourly::wind_direction_120m].
-    #[serde(rename = "winddirection_120m")]
-    WindDirection120m,
-    /// Requests [Hourly::wind_direction_180m].
-    #[serde(rename = "winddirection_180m")]
-    WindDirection180m,
+    /// Requests [Hourly::wind_speed].
+    WindSpeed(GroundLevel),
+    /// Requests [Hourly::wind_direction].
+    WindDirection(GroundLevel),
     /// Requests [Hourly::wind_gusts_10m].
-    #[serde(rename = "windgusts_10m")]
     WindGusts10m,
     // TODO: more fields
     /// Requests [Hourly::precipitation].
     Precipitation,
     // TODO: more fields
     /// Requests [Hourly::weather_code].
-    #[serde(rename = "weathercode")]
     WeatherCode,
     /// Requests [Hourly::snow_depth].
-    #[serde(rename = "snow_depth")]
     SnowDepth,
     /// Requests [Hourly::freezing_level_height].
-    #[serde(rename = "freezinglevel_height")]
     FreezingLevelHeight,
+    /// Requests [Hourly::pressure_temperature],
+    PressureTemperature(PressureLevel),
+    /// Requests [Hourly::pressure_geopotential_height],
+    PressureGeopotentialHeight(PressureLevel),
 }
+
+static HOURLY_ENUMERATED: Lazy<Vec<HourlyVariable>> = Lazy::new(|| {
+    let mut e = vec![
+        HourlyVariable::Time,
+        HourlyVariable::Temperature2m,
+        HourlyVariable::RelativeHumidity2m,
+        HourlyVariable::Dewpoint2m,
+        HourlyVariable::ApparentTemperature,
+        HourlyVariable::PressureMsl,
+        HourlyVariable::SurfacePressure,
+        HourlyVariable::CloudCover,
+        HourlyVariable::CloudCoverLow,
+        HourlyVariable::CloudCoverMid,
+        HourlyVariable::CloudCoverHigh,
+    ];
+
+    e.extend(
+        GroundLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(HourlyVariable::WindSpeed),
+    );
+    e.extend(
+        GroundLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(HourlyVariable::WindDirection),
+    );
+
+    e.extend_from_slice(&[
+        HourlyVariable::WindGusts10m,
+        HourlyVariable::Precipitation,
+        HourlyVariable::WeatherCode,
+        HourlyVariable::SnowDepth,
+        HourlyVariable::FreezingLevelHeight,
+    ]);
+
+    e.extend(
+        PressureLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(HourlyVariable::PressureTemperature),
+    );
+
+    e.extend(
+        PressureLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(HourlyVariable::PressureGeopotentialHeight),
+    );
+
+    e
+});
+
+static HOURLY_SERDE_NAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    HourlyVariable::enumerate()
+        .iter()
+        .map(HourlyVariable::serde_name)
+        .collect()
+});
+
+impl HourlyVariable {
+    pub fn enumerate() -> &'static [Self] {
+        HOURLY_ENUMERATED.as_slice()
+    }
+
+    fn from_serde_name(name: &str) -> Option<Self> {
+        Self::enumerate()
+            .iter()
+            .find(|hv| hv.serde_name() == name)
+            .cloned()
+    }
+
+    fn serde_name(&self) -> &'static str {
+        match self {
+            HourlyVariable::Time => "time",
+            HourlyVariable::Temperature2m => "temperature_2m",
+            HourlyVariable::RelativeHumidity2m => "relativehumidity_2m",
+            HourlyVariable::Dewpoint2m => "dewpoint_2m",
+            HourlyVariable::ApparentTemperature => "apparent_temperature",
+            HourlyVariable::PressureMsl => "pressure_msl",
+            HourlyVariable::SurfacePressure => "surface_pressure",
+            HourlyVariable::CloudCover => "cloudcover",
+            HourlyVariable::CloudCoverLow => "cloud_cover_low",
+            HourlyVariable::CloudCoverMid => "cloud_cover_mid",
+            HourlyVariable::CloudCoverHigh => "cloud_cover_high",
+            HourlyVariable::WindSpeed(level) => WindSpeedField::name(level),
+            HourlyVariable::WindDirection(level) => WindDirectionField::name(level),
+            HourlyVariable::WindGusts10m => "windgusts_10m",
+            HourlyVariable::Precipitation => "precipitation",
+            HourlyVariable::WeatherCode => "weathercode",
+            HourlyVariable::SnowDepth => "snow_depth",
+            HourlyVariable::FreezingLevelHeight => "freezinglevel_height",
+            HourlyVariable::PressureTemperature(level) => PressureTemperatureField::name(level),
+            HourlyVariable::PressureGeopotentialHeight(level) => {
+                PressureGeopotentialHeightField::name(level)
+            }
+        }
+    }
+
+    fn serde_names() -> &'static [&'static str] {
+        HOURLY_SERDE_NAMES.as_slice()
+    }
+}
+
+impl Serialize for HourlyVariable {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.serde_name())
+    }
+}
+
+impl<'de> Deserialize<'de> for HourlyVariable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct HourlyVariableVisitor;
+
+        impl<'de> Visitor<'de> for HourlyVariableVisitor {
+            type Value = HourlyVariable;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("Expecting one of: ")?;
+                for name in HourlyVariable::enumerate()
+                    .iter()
+                    .map(HourlyVariable::serde_name)
+                {
+                    formatter.write_str(name)?
+                }
+
+                Ok(())
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                HourlyVariable::enumerate()
+                    .iter()
+                    .find(|hv| hv.serde_name() == v)
+                    .ok_or_else(|| {
+                        E::custom(format!(
+                            "{} does not match any valid HourlyVariable field names",
+                            v
+                        ))
+                    })
+                    .cloned()
+            }
+        }
+        deserializer.deserialize_str(HourlyVariableVisitor)
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum GroundLevel {
+    /// 10m above the ground.
+    L10 = 10,
+    /// 80m above the ground.
+    L80 = 80,
+    /// 120m above the ground.
+    L120 = 120,
+    /// 180m above the ground.
+    L180 = 180,
+}
+
+impl GroundLevel {
+    /// Height above the ground in meters.
+    pub fn height(&self) -> f32 {
+        match self {
+            GroundLevel::L10 => 10.0,
+            GroundLevel::L80 => 80.0,
+            GroundLevel::L120 => 120.0,
+            GroundLevel::L180 => 180.0,
+        }
+    }
+}
+
+impl Level for GroundLevel {
+    fn enumerate() -> &'static [Self] {
+        &[Self::L10, Self::L80, Self::L120, Self::L180]
+    }
+}
+
+/// Field definition for [`WindDirection`].
+pub struct WindDirectionField;
+
+static WIND_DIRECTION_NAMES: Lazy<HashMap<GroundLevel, String>> = Lazy::new(|| {
+    GroundLevel::enumerate()
+        .iter()
+        .cloned()
+        .map(|level| (level, format!("winddirection_{}m", level as u32)))
+        .collect()
+});
+
+impl LevelField<GroundLevel> for WindDirectionField {
+    fn name(level: &GroundLevel) -> &'static str {
+        WIND_DIRECTION_NAMES.get(level).unwrap()
+    }
+}
+
+/// Direction of the wind in degrees.
+pub type WindDirection = LevelVariable<GroundLevel, WindDirectionField, Vec<f32>>;
+
+/// Field definition for [`WindSpeed`].
+pub struct WindSpeedField;
+
+static WIND_SPEED_NAMES: Lazy<HashMap<GroundLevel, String>> = Lazy::new(|| {
+    GroundLevel::enumerate()
+        .iter()
+        .cloned()
+        .map(|level| (level, format!("windspeed_{}m", level as u32)))
+        .collect()
+});
+
+impl LevelField<GroundLevel> for WindSpeedField {
+    fn name(level: &GroundLevel) -> &'static str {
+        WIND_SPEED_NAMES.get(level).unwrap()
+    }
+}
+
+/// Speed of the wind.
+pub type WindSpeed = LevelVariable<GroundLevel, WindSpeedField, Vec<f32>>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum PressureLevel {
@@ -308,8 +510,8 @@ impl PressureLevel {
 }
 
 impl Level for PressureLevel {
-    fn enumerate() -> Vec<Self> {
-        vec![
+    fn enumerate() -> &'static [Self] {
+        &[
             Self::L1000,
             Self::L975,
             Self::L950,
@@ -333,32 +535,49 @@ impl Level for PressureLevel {
     }
 }
 
-pub type PressureTemperature = LevelVariable<PressureLevel, PressureTemperatureField, f32>;
+pub type PressureTemperature = LevelVariable<PressureLevel, PressureTemperatureField, Vec<f32>>;
 
 #[derive(Debug)]
 pub struct PressureTemperatureField;
 
+static PRESSURE_TEMPERATURE_FIELD_NAMES: Lazy<HashMap<PressureLevel, String>> = Lazy::new(|| {
+    PressureLevel::enumerate()
+        .iter()
+        .cloned()
+        .map(|level| (level, format!("temperature_{}hPa", level as u32)))
+        .collect()
+});
+
 impl LevelField<PressureLevel> for PressureTemperatureField {
-    fn name(level: &PressureLevel) -> String {
-        format!("temperature_{}hPa", *level as u32)
+    fn name(level: &PressureLevel) -> &'static str {
+        PRESSURE_TEMPERATURE_FIELD_NAMES.get(level).unwrap()
     }
 }
 
 pub type PressureGeopotentialHeight =
-    LevelVariable<PressureLevel, PressureGeopotentialHeightField, f32>;
+    LevelVariable<PressureLevel, PressureGeopotentialHeightField, Vec<f32>>;
 
 pub struct PressureGeopotentialHeightField;
 
+static PRESSURE_GEOPOTENTIAL_HEIGHT_FIELD_NAMES: Lazy<HashMap<PressureLevel, String>> =
+    Lazy::new(|| {
+        PressureLevel::enumerate()
+            .iter()
+            .cloned()
+            .map(|level| (level, format!("geopotential_height_{}hPa", level as u32)))
+            .collect()
+    });
+
 impl LevelField<PressureLevel> for PressureGeopotentialHeightField {
-    fn name(level: &PressureLevel) -> String {
-        format!("geopotential_height_{}hPa", *level as u32)
+    fn name(level: &PressureLevel) -> &'static str {
+        PRESSURE_GEOPOTENTIAL_HEIGHT_FIELD_NAMES.get(level).unwrap()
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default)]
 pub struct Hourly {
     /// The times for the values in this struct's fields.
-    #[serde(deserialize_with = "naive_times_deserialize")]
+    // -   #[serde(deserialize_with = "naive_times_deserialize")]
     pub time: Vec<chrono::NaiveDateTime>,
     /// Air temperature at 2 meters above ground.
     ///
@@ -369,7 +588,7 @@ pub struct Hourly {
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
-    #[serde(rename = "relativehumidity_2m")]
+    // #[serde(rename = "relativehumidity_2m")]
     pub relative_humidity_2m: Option<Vec<f32>>,
     /// Dew point temperature at 2 meters above ground.
     ///
@@ -402,74 +621,37 @@ pub struct Hourly {
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
-    #[serde(rename = "cloudcover")]
     pub cloud_cover: Option<Vec<f32>>,
     /// Low level cloud and fog cover up to 3 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
-    #[serde(rename = "cloudcover_low")]
     pub cloud_cover_low: Option<Vec<f32>>,
     /// Mid level cloud and fog cover 3 to 8 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
-    #[serde(rename = "cloudcover_mid")]
     pub cloud_cover_mid: Option<Vec<f32>>,
     /// High level cloud and fog cover from 8 km altitude as an area fraction.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `%`
-    #[serde(rename = "cloudcover_high")]
     pub cloud_cover_high: Option<Vec<f32>>,
-    /// Wind speed at 10 meters above ground. Wind speed at 10 meters is the standard level.
+    /// Wind speed at different heights above ground. Wind speed at 10 meters is the standard level.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `km/h (mph, m/s, knots)`
-    #[serde(rename = "windspeed_10m")]
-    pub wind_speed_10m: Option<Vec<f32>>,
-    /// Wind speed at 80 meters above ground.
-    ///
-    /// + Valid time: `Instant`
-    /// + Unit: `km/h (mph, m/s, knots)`
-    #[serde(rename = "windspeed_80m")]
-    pub wind_speed_80m: Option<Vec<f32>>,
-    /// Wind speed at 120 meters above ground.
-    ///
-    /// + Valid time: `Instant`
-    /// + Unit: `km/h (mph, m/s, knots)`
-    #[serde(rename = "windspeed_120m")]
-    pub wind_speed_120m: Option<Vec<f32>>,
-    /// Wind speed at 180 meters above ground.
-    ///
-    /// + Valid time: `Instant`
-    /// + Unit: `km/h (mph, m/s, knots)`
-    #[serde(rename = "windspeed_180m")]
-    pub wind_speed_180m: Option<Vec<f32>>,
-    /// Wind direction at 10 meters above the ground.
+    pub wind_speed: WindSpeed,
+    /// Wind direction at different heights above the ground.
     ///
     /// + Valid time: `Instant`
     /// + Unit: `°`
-    #[serde(rename = "winddirection_10m")]
-    pub wind_direction_10m: Option<Vec<f32>>,
-    /// Wind direction at 80 meters above the ground.
+    pub wind_direction: WindDirection,
+    /// Wind gust speed at 10m above the ground as a maximum of the preceding hour.
     ///
-    /// + Valid time: `Instant`
-    /// + Unit: `°`
-    #[serde(rename = "winddirection_80m")]
-    pub wind_direction_80m: Option<Vec<f32>>,
-    /// Wind direction at 120 meters above the ground.
-    ///
-    /// + Valid time: `Instant`
-    /// + Unit: `°`
-    #[serde(rename = "winddirection_120m")]
-    pub wind_direction_120m: Option<Vec<f32>>,
-    /// Wind direction at 180 meters above the ground.
-    ///
-    /// + Valid time: `Instant`
-    /// + Unit: `°`
-    #[serde(rename = "winddirection_180m")]
-    pub wind_direction_180m: Option<Vec<f32>>,
+    /// + Valid time: `Preceding hour mean`
+    /// + Unit: `km/h`
+    pub wind_gusts_10m: Option<Vec<f32>>,
     // TODO: more fields
     /// Total precipitation (rain, showers, snow) sum of the preceding hour.
     ///
@@ -480,7 +662,6 @@ pub struct Hourly {
     /// Weather condition.
     ///
     /// + Valid time: `Instant`
-    #[serde(rename = "weathercode")]
     pub weather_code: Option<Vec<WeatherCode>>,
     /// Snow depth on the ground.
     ///
@@ -491,78 +672,171 @@ pub struct Hourly {
     ///
     /// + Valid time: `Instant`
     /// + Unit: `meters`
-    #[serde(rename = "freezinglevel_height")]
     pub freezing_level_height: Option<Vec<f32>>,
-
-    #[serde(flatten)]
+    /// Air temperature at the specified pressure level. Air temperatures decrease linearly with
+    /// pressure.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `°C (°F)`
     pub pressure_temperature: PressureTemperature,
+    /// Geopotential height at the specified pressure level. This can be used to get the correct
+    /// altitude in meter above sea level of each pressure level. Be carefull not to mistake it
+    /// with altitude above ground.
+    ///
+    /// + Valid time: `Instant`
+    /// + Unit: `meter`
+    pub pressure_geopotential_height: PressureGeopotentialHeight,
 }
 
-/// Deserialize date time in ISO8601 format without seconds or timezone.
-fn naive_time_deserialize<'de, D>(deserializer: D) -> Result<chrono::NaiveDateTime, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct StrVisitor;
-    impl<'de> serde::de::Visitor<'de> for StrVisitor {
-        type Value = NaiveDateTime;
+impl<'de> Deserialize<'de> for Hourly {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        /// Deserialize date time in ISO8601 format without seconds or timezone.
+        struct TimeDeserialize(NaiveDateTime);
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(
-                formatter,
-                "An ISO8601 date without the seconds or the timezone: e.g. 2022-08-02T10:42"
-            )
-        }
+        impl<'de> Deserialize<'de> for TimeDeserialize {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct StrVisitor;
+                impl<'de> serde::de::Visitor<'de> for StrVisitor {
+                    type Value = TimeDeserialize;
 
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M")
-                .map_err(serde::de::Error::custom)
-        }
-    }
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        write!(
+                            formatter,
+                            "An ISO8601 date without the seconds or the timezone: e.g. 2022-08-02T10:42"
+                        )
+                    }
 
-    deserializer.deserialize_str(StrVisitor)
-}
+                    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M")
+                            .map_err(serde::de::Error::custom)
+                            .map(TimeDeserialize)
+                    }
+                }
 
-/// Deserialize sequence of date time in ISO8601 format without seconds or timezone.
-fn naive_times_deserialize<'de, D>(deserializer: D) -> Result<Vec<chrono::NaiveDateTime>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct DateTime(chrono::NaiveDateTime);
-
-    impl<'de> Deserialize<'de> for DateTime {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            naive_time_deserialize(deserializer).map(DateTime)
-        }
-    }
-
-    struct SeqVisitor;
-    impl<'de> serde::de::Visitor<'de> for SeqVisitor {
-        type Value = Vec<chrono::NaiveDateTime>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(formatter, "Expecting a sequence of values")
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::SeqAccess<'de>,
-        {
-            let mut v = Vec::new();
-            while let Some(element) = seq.next_element::<DateTime>()? {
-                v.push(element.0)
+                deserializer.deserialize_str(StrVisitor)
             }
-
-            Ok(v)
         }
+        struct HourlyVisitor;
+
+        impl<'de> Visitor<'de> for HourlyVisitor {
+            type Value = Hourly;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                todo!()
+            }
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut hourly = Hourly::default();
+                let mut wind_speed_fields: HashMap<String, Vec<f32>> = HashMap::new();
+                let mut wind_direction_fields: HashMap<String, Vec<f32>> = HashMap::new();
+                let mut pressure_temperature_fields: HashMap<String, Vec<f32>> = HashMap::new();
+                let mut pressure_geopotential_height_fields: HashMap<String, Vec<f32>> =
+                    HashMap::new();
+
+                while let Some(key) = map.next_key::<String>()? {
+                    if let Some(hv) = HourlyVariable::from_serde_name(&key) {
+                        match hv {
+                            HourlyVariable::Time => {
+                                hourly.time = map
+                                    .next_value::<Vec<TimeDeserialize>>()?
+                                    .into_iter()
+                                    .map(|t| t.0)
+                                    .collect()
+                            }
+                            HourlyVariable::Temperature2m => {
+                                hourly.temperature_2m = map.next_value()?;
+                            }
+                            HourlyVariable::RelativeHumidity2m => {
+                                hourly.relative_humidity_2m = map.next_value()?;
+                            }
+                            HourlyVariable::Dewpoint2m => {
+                                hourly.dewpoint_2m = map.next_value()?;
+                            }
+                            HourlyVariable::ApparentTemperature => {
+                                hourly.apparent_temperature = map.next_value()?;
+                            }
+                            HourlyVariable::PressureMsl => {
+                                hourly.pressure_msl = map.next_value()?;
+                            }
+                            HourlyVariable::SurfacePressure => {
+                                hourly.surface_pressure = map.next_value()?;
+                            }
+                            HourlyVariable::CloudCover => {
+                                hourly.cloud_cover = map.next_value()?;
+                            }
+                            HourlyVariable::CloudCoverLow => {
+                                hourly.cloud_cover_low = map.next_value()?;
+                            }
+                            HourlyVariable::CloudCoverMid => {
+                                hourly.cloud_cover_mid = map.next_value()?;
+                            }
+                            HourlyVariable::CloudCoverHigh => {
+                                hourly.cloud_cover_high = map.next_value()?;
+                            }
+                            HourlyVariable::WindSpeed(level) => {
+                                wind_speed_fields.insert(key.to_owned(), map.next_value()?);
+                            }
+                            HourlyVariable::WindDirection(level) => {
+                                wind_direction_fields.insert(key.to_owned(), map.next_value()?);
+                            }
+                            HourlyVariable::WindGusts10m => {
+                                hourly.wind_gusts_10m = map.next_value()?;
+                            }
+                            HourlyVariable::Precipitation => {
+                                hourly.precipitation = map.next_value()?;
+                            }
+                            HourlyVariable::WeatherCode => {
+                                hourly.weather_code = map.next_value()?;
+                            }
+                            HourlyVariable::SnowDepth => {
+                                hourly.snow_depth = map.next_value()?;
+                            }
+                            HourlyVariable::FreezingLevelHeight => {
+                                hourly.freezing_level_height = map.next_value()?;
+                            }
+                            HourlyVariable::PressureTemperature(level) => {
+                                pressure_temperature_fields
+                                    .insert(key.to_owned(), map.next_value()?);
+                            }
+                            HourlyVariable::PressureGeopotentialHeight(level) => {
+                                pressure_geopotential_height_fields
+                                    .insert(key.to_owned(), map.next_value()?);
+                            }
+                        }
+                    } else {
+                        return Err(serde::de::Error::unknown_field(
+                            &key,
+                            HourlyVariable::serde_names(),
+                        ));
+                    }
+                }
+
+                hourly.wind_speed = WindSpeed::deserialize(wind_speed_fields.into_deserializer())?;
+                hourly.wind_direction =
+                    WindDirection::deserialize(wind_direction_fields.into_deserializer())?;
+                hourly.pressure_temperature = PressureTemperature::deserialize(
+                    pressure_temperature_fields.into_deserializer(),
+                )?;
+                hourly.pressure_geopotential_height = PressureGeopotentialHeight::deserialize(
+                    pressure_geopotential_height_fields.into_deserializer(),
+                )?;
+
+                Ok(hourly)
+            }
+        }
+        deserializer.deserialize_any(HourlyVisitor)
     }
-    deserializer.deserialize_seq(SeqVisitor)
 }
 
 #[derive(Serialize, Hash, PartialEq, Eq)]
@@ -801,10 +1075,11 @@ pub async fn obtain_forecast(
 
 #[cfg(test)]
 mod test {
+    use chrono::{NaiveDate, NaiveDateTime};
     use chrono_tz::Tz;
     use serde_json::json;
 
-    use crate::Forecast;
+    use crate::{Forecast, GroundLevel, HourlyVariable};
 
     use super::TimeZone;
 
@@ -822,31 +1097,92 @@ mod test {
 
     #[test]
     fn forecast_deserialize() {
-        let forecast_json = r#"{
-  "elevation": 0.0,
-  "generationtime_ms": 0.5849599838256836,
-  "hourly": {
-    "freezinglevel_height": [
-      2000.0,
-      1980.0
-    ],
-    "time": [
-      "2022-10-04T00:00",
-      "2022-10-04T01:00"
-    ],
-    "temperature_1000hPa": 10.0
-  },
-  "hourly_units": {
-    "freezinglevel_height": "m",
-    "time": "iso8601"
-  },
-  "latitude": -43.375,
-  "longitude": 170.25,
-  "timezone": "Pacific/Auckland",
-  "timezone_abbreviation": "NZDT",
-  "utc_offset_seconds": 46800
-}"#;
+        let forecast_json = json!({
+          "elevation": 1050.0,
+          "generationtime_ms": 0.5849599838256836,
+          "hourly": {
+            "windspeed_10m": [
+                0.0,
+                10.0,
+            ],
+            "windspeed_80m": [
+                10.0,
+                20.0,
+            ],
+            "winddirection_10m": [
+                200.0,
+                300.0,
+            ],
+            "winddirection_80m": [
+                210.0,
+                310.0,
+            ],
+            "freezinglevel_height": [
+              2000.0,
+              1980.0,
+            ],
+            "time": [
+              "2022-10-04T00:00",
+              "2022-10-04T01:00",
+            ],
+            "temperature_1000hPa": [
+                10.0,
+                12.0,
+            ],
+          },
+          "hourly_units": {
+            "freezinglevel_height": "m",
+            "time": "iso8601"
+          },
+          "latitude": -43.375,
+          "longitude": 170.25,
+          "timezone": "Pacific/Auckland",
+          "timezone_abbreviation": "NZDT",
+          "utc_offset_seconds": 46800,
+        });
 
-        let forecast: Forecast = serde_json::from_str(forecast_json).unwrap();
+        let forecast: Forecast = serde_json::from_value(forecast_json).unwrap();
+        assert_eq!(1050.0, forecast.elevation);
+        assert_eq!(0.5849599838256836, forecast.generation_time_ms);
+
+        let hourly = forecast.hourly.unwrap();
+
+        assert_eq!(
+            vec![
+                NaiveDate::from_ymd(2022, 10, 4).and_hms(0, 0, 0),
+                NaiveDate::from_ymd(2022, 10, 4).and_hms(1, 0, 0)
+            ],
+            hourly.time
+        );
+        assert_eq!(
+            &vec![0.0, 10.0],
+            hourly.wind_speed.value(&GroundLevel::L10).unwrap()
+        );
+        assert_eq!(
+            &vec![10.0, 20.0],
+            hourly.wind_speed.value(&GroundLevel::L80).unwrap()
+        );
+        assert_eq!(
+            &vec![200.0, 300.0],
+            hourly.wind_direction.value(&GroundLevel::L10).unwrap()
+        );
+        assert_eq!(
+            &vec![210.0, 310.0],
+            hourly.wind_direction.value(&GroundLevel::L80).unwrap()
+        );
+        assert_eq!(vec![2000.0, 1980.0], hourly.freezing_level_height.unwrap());
+        let expected_hourly_units = vec![
+            (HourlyVariable::FreezingLevelHeight, "m"),
+            (HourlyVariable::Time, "iso8601"),
+        ]
+        .into_iter()
+        .map(|(hv, unit)| (hv, unit.to_owned()))
+        .collect();
+        assert_eq!(Some(expected_hourly_units), forecast.hourly_units);
+        assert_eq!(-43.375, forecast.latitude);
+        assert_eq!(170.25, forecast.longitude);
+        assert_eq!(Tz::Pacific__Auckland, forecast.timezone);
+        assert_eq!("NZDT", forecast.timezone_abbreviation);
+        assert_eq!(46800, forecast.utc_offset_seconds);
     }
 }

@@ -1839,6 +1839,7 @@ dependencies = [
  "buildstructor",
  "chrono",
  "chrono-tz",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",

@@ -11,7 +11,7 @@ use chrono::NaiveDateTime;
 use chrono_tz::OffsetComponents;
 use eyre::Context;
 use html_builder::Html5;
-use open_meteo::{Hourly, HourlyVariable, TimeZone, WeatherCode};
+use open_meteo::{GroundLevel, Hourly, HourlyVariable, TimeZone, WeatherCode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -348,8 +348,8 @@ async fn process_email(
         .latitude(position.latitude)
         .longitude(position.longitude)
         .hourly_entry(HourlyVariable::FreezingLevelHeight)
-        .hourly_entry(HourlyVariable::WindSpeed10m)
-        .hourly_entry(HourlyVariable::WindDirection10m)
+        .hourly_entry(HourlyVariable::WindSpeed(GroundLevel::L10))
+        .hourly_entry(HourlyVariable::WindDirection(GroundLevel::L10))
         .hourly_entry(HourlyVariable::WeatherCode)
         .hourly_entry(HourlyVariable::Precipitation)
         .timezone(TimeZone::Auto)
@@ -374,10 +374,12 @@ async fn process_email(
         .freezing_level_height
         .ok_or_else(|| eyre::eyre!("expected freezing_level_height to be present"))?;
     let wind_speed_10m: &[f32] = &hourly
-        .wind_speed_10m
+        .wind_speed
+        .value(&GroundLevel::L10)
         .ok_or_else(|| eyre::eyre!("expected wind_speed_10m to be present"))?;
     let wind_direction_10m: &[f32] = &hourly
-        .wind_direction_10m
+        .wind_direction
+        .value(&GroundLevel::L10)
         .ok_or_else(|| eyre::eyre!("expected wind_direction_10m to be present"))?;
     let weather_code: &[WeatherCode] = &hourly
         .weather_code
