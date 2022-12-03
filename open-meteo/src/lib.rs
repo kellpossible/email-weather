@@ -359,14 +359,13 @@ impl<'de> Deserialize<'de> for HourlyVariable {
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("Expecting one of: ")?;
-                for name in HourlyVariable::enumerate()
+                let names = HourlyVariable::enumerate()
                     .iter()
                     .map(HourlyVariable::serde_name)
-                {
-                    formatter.write_str(name)?
-                }
+                    .collect::<Vec<&str>>()
+                    .join(", ");
 
-                Ok(())
+                formatter.write_str(&names)
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -731,7 +730,13 @@ impl<'de> Deserialize<'de> for Hourly {
             type Value = Hourly;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                todo!()
+                formatter.write_str("Expecting one of: ")?;
+                let expecting_names = HourlyVariable::serde_names()
+                    .iter()
+                    .map(|s| *s)
+                    .collect::<Vec<&str>>()
+                    .join(", ");
+                formatter.write_str(&expecting_names)
             }
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
@@ -1075,7 +1080,7 @@ pub async fn obtain_forecast(
 
 #[cfg(test)]
 mod test {
-    use chrono::{NaiveDate, NaiveDateTime};
+    use chrono::NaiveDate;
     use chrono_tz::Tz;
     use serde_json::json;
 
