@@ -16,7 +16,7 @@ highlight_code = false
 
 [extra]
 juice_logo_name = "Email Weather"
-juice_logo_path = "logo.png"
+juice_logo_path = "logo.svg"
 juice_extra_menu = [
     { title = "Github", link = "https://github.com/kellpossible/email-weather"}
 ]
