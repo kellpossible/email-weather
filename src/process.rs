@@ -20,7 +20,7 @@ use crate::{
     forecast_service,
     receive::{Received, ReceivedKind},
     reply::Reply,
-    request::{ForecastRequest, ParsedForecastRequest},
+    request::ParsedForecastRequest,
     task::run_retry_log_errors,
     time, topo_data_service,
 };
@@ -92,8 +92,6 @@ enum ProcessEmailError {
     NoPosition,
     #[error(transparent)]
     Unexpected(#[from] eyre::Error),
-    #[error("A networking error occurred")]
-    Network,
 }
 
 trait FormatForecast {
@@ -627,7 +625,6 @@ async fn process_emails_impl(
                             None,
                         )
                     }
-                    ProcessEmailError::Network => return Err(error.into()),
                 },
             };
         let reply_bytes = serde_json::to_vec(&reply).wrap_err("Failed to serialize reply")?;

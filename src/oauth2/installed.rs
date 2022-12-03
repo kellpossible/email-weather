@@ -7,26 +7,25 @@ use oauth2::{
     basic::BasicClient, AccessToken, AuthorizationCode, CsrfToken, PkceCodeChallenge, Scope,
     TokenResponse,
 };
-use tokio::sync::Mutex;
 
 use super::{
     authenticate_with_token_cache, refresh_token, AuthenticationFlow, ClientSecretDefinition,
-    ConsentRedirect, StandardTokenResponse, TokenCache, TokenCacheData,
+    ConsentRedirect, StandardTokenResponse, TokenCache,
 };
 
 /// Used for the "installed" authentication flow.
-pub struct InstalledFlow {
+pub struct Flow {
     redirect: ConsentRedirect,
     scopes: Vec<Scope>,
     client: BasicClient,
     token_cache: TokenCache,
 }
 
-impl InstalledFlow {
+impl Flow {
     /// Create a new [`InstalledFlow`].
     pub fn new(
         redirect: ConsentRedirect,
-        client_secret: ClientSecretDefinition,
+        client_secret: &ClientSecretDefinition,
         scopes: Vec<Scope>,
         token_cache_path: impl Into<PathBuf>,
     ) -> Self {
@@ -41,14 +40,14 @@ impl InstalledFlow {
 
         Self {
             redirect,
-            client,
             scopes,
+            client,
             token_cache,
         }
     }
 
     #[tracing::instrument(skip(self, scopes))]
-    async fn obtain_new_token(&self, scopes: Vec<Scope>) -> eyre::Result<StandardTokenResponse> {
+    async fn obtain_new_token(&self, scopes: &[Scope]) -> eyre::Result<StandardTokenResponse> {
         let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
         let redirect_uri = self.redirect.redirect_url();
         let (auth_url, csrf_state) = self
@@ -64,7 +63,7 @@ impl InstalledFlow {
             // server to return a refresh token and an access token the first time that your
             // application exchanges an authorization code for tokens.
             .add_extra_param("access_type", "offline")
-            .add_scopes(scopes)
+            .add_scopes(scopes.iter().cloned())
             .set_pkce_challenge(pkce_challenge)
             // Out of band copy/paste code
             .set_redirect_uri(Cow::Borrowed(&redirect_uri))
@@ -137,7 +136,7 @@ impl InstalledFlow {
 }
 
 #[async_trait]
-impl AuthenticationFlow for InstalledFlow {
+impl AuthenticationFlow for Flow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
         let mut token_cache = self.token_cache.lock().await;
         if token_cache.exists() {
@@ -155,7 +154,7 @@ impl AuthenticationFlow for InstalledFlow {
             }
         }
         authenticate_with_token_cache(
-            self.scopes.clone(),
+            &self.scopes,
             &mut token_cache,
             |scopes| self.obtain_new_token(scopes),
             |rt, scopes| refresh_token(&self.client, rt, scopes),

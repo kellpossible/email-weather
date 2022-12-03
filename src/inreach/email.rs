@@ -4,7 +4,6 @@ use eyre::Context;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 
 use crate::{
     gis::Position,
@@ -28,7 +27,7 @@ pub struct Received {
 
 impl receive::Received for Received {
     fn position(&self) -> Option<Position> {
-        Some(self.position.clone())
+        Some(self.position)
     }
 
     fn forecast_request(&self) -> &ParsedForecastRequest {
@@ -54,12 +53,12 @@ impl ParseReceivedEmail for Received {
 
     fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err> {
         let body = text_body(&message)?;
-        Self::parse(body)
+        Self::parse(&body)
     }
 }
 
 impl Received {
-    fn parse<'a>(body: Cow<'a, str>) -> Result<Self, eyre::Error> {
+    fn parse(body: &str) -> Result<Self, eyre::Error> {
         let mut from_name: Option<String> = None;
         let mut referral_url: Option<url::Url> = None;
         let mut latitude: Option<f32> = None;
@@ -74,9 +73,9 @@ impl Received {
                         let name_match = c.get(1).unwrap();
                         from_name = Some(name_match.as_str().to_string());
                         parse_state = ParseState::ReferralUrl;
-                        if message_body.len() > 0 {
+                        if !message_body.is_empty() {
                             // Remove last empty newline
-                            if message_body.chars().last() == Some('\n') {
+                            if message_body.ends_with('\n') {
                                 message_body.remove(
                                     message_body
                                         .char_indices()

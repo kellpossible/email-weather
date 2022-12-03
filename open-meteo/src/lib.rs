@@ -731,11 +731,7 @@ impl<'de> Deserialize<'de> for Hourly {
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("Expecting one of: ")?;
-                let expecting_names = HourlyVariable::serde_names()
-                    .iter()
-                    .map(|s| *s)
-                    .collect::<Vec<&str>>()
-                    .join(", ");
+                let expecting_names = HourlyVariable::serde_names().to_vec().join(", ");
                 formatter.write_str(&expecting_names)
             }
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -789,10 +785,10 @@ impl<'de> Deserialize<'de> for Hourly {
                             HourlyVariable::CloudCoverHigh => {
                                 hourly.cloud_cover_high = map.next_value()?;
                             }
-                            HourlyVariable::WindSpeed(level) => {
+                            HourlyVariable::WindSpeed(_) => {
                                 wind_speed_fields.insert(key.to_owned(), map.next_value()?);
                             }
-                            HourlyVariable::WindDirection(level) => {
+                            HourlyVariable::WindDirection(_) => {
                                 wind_direction_fields.insert(key.to_owned(), map.next_value()?);
                             }
                             HourlyVariable::WindGusts10m => {
@@ -810,11 +806,11 @@ impl<'de> Deserialize<'de> for Hourly {
                             HourlyVariable::FreezingLevelHeight => {
                                 hourly.freezing_level_height = map.next_value()?;
                             }
-                            HourlyVariable::PressureTemperature(level) => {
+                            HourlyVariable::PressureTemperature(_) => {
                                 pressure_temperature_fields
                                     .insert(key.to_owned(), map.next_value()?);
                             }
-                            HourlyVariable::PressureGeopotentialHeight(level) => {
+                            HourlyVariable::PressureGeopotentialHeight(_) => {
                                 pressure_geopotential_height_fields
                                     .insert(key.to_owned(), map.next_value()?);
                             }
@@ -1000,14 +996,14 @@ impl Serialize for ForecastParameters {
 
 #[derive(Debug, Deserialize)]
 pub struct CurrentWeather {
-    time: chrono::NaiveDateTime,
-    temperature: f32,
+    pub time: chrono::NaiveDateTime,
+    pub temperature: f32,
     #[serde(rename = "weathercode")]
-    weather_code: WeatherCode,
+    pub weather_code: WeatherCode,
     #[serde(rename = "windspeed")]
-    wind_speed: f32,
+    pub wind_speed: f32,
     #[serde(rename = "winddirection")]
-    wind_direction: u16,
+    pub wind_direction: u16,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1058,7 +1054,7 @@ pub async fn obtain_forecast_json(
     client: &reqwest::Client,
     parameters: &ForecastParameters,
 ) -> Result<String, Error> {
-    let query = serde_urlencoded::to_string(&parameters)?;
+    let query = serde_urlencoded::to_string(parameters)?;
     let url = format!("https://api.open-meteo.com/v1/forecast?{}", query);
     tracing::trace!("GET {}", url);
 

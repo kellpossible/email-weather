@@ -7,7 +7,7 @@ use open_meteo::{Forecast, ForecastParameters};
 /// Trait used to allow mocking the [open_meteo] forecasting service.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Port {
+pub trait Port: Send + Sync {
     /// Obtain a weather forecast using [open_meteo::obtain_forecast()].
     async fn obtain_forecast(
         &self,
@@ -22,6 +22,7 @@ pub struct Gateway {
 
 impl Gateway {
     /// Construct a new [Gateway].
+    #[must_use]
     pub fn new(http_client: reqwest::Client) -> Self {
         Self { http_client }
     }

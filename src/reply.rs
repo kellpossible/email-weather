@@ -12,13 +12,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::{
-    email, inreach,
-    oauth2::AuthenticationFlow,
-    process::{FormatDetail, LongFormatStyle},
-    receive::ReceivedKind,
-    retry::ExponentialBackoff,
-    task::run_retry_log_errors,
-    time,
+    email, inreach, oauth2::AuthenticationFlow, receive::ReceivedKind, retry::ExponentialBackoff,
+    task::run_retry_log_errors, time,
 };
 
 /// A reply to an inreach device.
@@ -227,11 +222,11 @@ where
                             RETRY_ATTEMPTS
                         );
                         continue;
-                    } else {
-                        let reply_json = serde_json::to_string(&reply)?;
-                        tracing::error!("Max retries exceeded, discarding reply\n{}", reply_json);
-                        break;
                     }
+
+                    let reply_json = serde_json::to_string(&reply)?;
+                    tracing::error!("Max retries exceeded, discarding reply\n{}", reply_json);
+                    break;
                 }
             }
         }

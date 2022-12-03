@@ -32,7 +32,7 @@ where
     fn clone(&self) -> Self {
         Self {
             values: self.values.clone(),
-            level_kind: self.level_kind.clone(),
+            level_kind: self.level_kind,
         }
     }
 }
@@ -137,7 +137,7 @@ where
             .get(0)
             .expect("Expected level to have at least one variant");
 
-        let field_name = LF::name(&variant);
+        let field_name = LF::name(variant);
         formatter.write_fmt(format_args!(
             "Expected something in the format of: `{}`",
             field_name

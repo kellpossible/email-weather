@@ -205,9 +205,9 @@ fn position_parser() -> impl Parser<char, Position, Error = Simple<char>> {
                         latitude
                     ),
                 ));
-            } else {
-                Ok(latitude)
             }
+
+            Ok(latitude)
         })
         .then_ignore(just(',').padded())
         .then(f32_parser().try_map(|longitude, span| {
@@ -219,9 +219,9 @@ fn position_parser() -> impl Parser<char, Position, Error = Simple<char>> {
                         longitude
                     ),
                 ));
-            } else {
-                Ok(longitude)
             }
+
+            Ok(longitude)
         }))
         .map(|(latitude, longitude)| Position::new(latitude, longitude))
         .labelled("position")

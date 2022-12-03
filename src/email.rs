@@ -4,6 +4,7 @@ use std::{fmt::Display, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
+/// Email address.
 #[derive(Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
 #[serde(transparent)]
 pub struct Address(lettre::Address);
@@ -56,11 +57,13 @@ pub struct Account(lettre::message::Mailbox);
 
 impl Account {
     /// Obtain `&str` to the email address portion of the account. e.g. `hello@example.com`.
+    #[must_use]
     pub fn email_str(&self) -> &str {
         self.0.email.as_ref()
     }
 
     /// Obtain the email [`Address`] portion of the account. e.g. `hello@example.com`.
+    #[must_use]
     pub fn email(&self) -> Address {
         Address(self.0.email.clone())
     }
@@ -86,7 +89,7 @@ impl<'a> TryFrom<&mail_parser::Addr<'a>> for Account {
             ));
         };
 
-        let name: Option<String> = address.name.as_ref().map(|name| name.to_string());
+        let name: Option<String> = address.name.as_ref().map(ToString::to_string);
 
         Ok(Self(lettre::message::Mailbox { name, email }))
     }

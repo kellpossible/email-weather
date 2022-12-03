@@ -29,6 +29,7 @@ where
 
 impl<CRS> Position<CRS> {
     /// Construct a new [`Position`].
+    #[must_use]
     pub fn new(latitude: f32, longitude: f32) -> Position<CRS> {
         Self {
             latitude,
@@ -45,7 +46,7 @@ pub trait CoordinateReferenceSystem {
 }
 
 /// WGS84 Coordinate system.
-#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct WGS84;
 
 impl CoordinateReferenceSystem for WGS84 {

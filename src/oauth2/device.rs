@@ -17,16 +17,18 @@ use super::{
     StandardTokenResponse, TokenCache,
 };
 
-pub struct DeviceFlow {
+/// Device OAUTH2 flow.
+pub struct Flow {
     client: BasicClient,
     scopes: Vec<Scope>,
     token_cache: TokenCache,
 }
 
-impl DeviceFlow {
+#[allow(unused)]
+impl Flow {
     /// Create a new [`DeviceFlow`].
     pub fn new(
-        client_secret: ClientSecretDefinition,
+        client_secret: &ClientSecretDefinition,
         scopes: Vec<Scope>,
         token_cache_path: impl Into<PathBuf>,
         device_authorization_url: DeviceAuthorizationUrl,
@@ -51,11 +53,11 @@ impl DeviceFlow {
 }
 
 #[async_trait]
-impl AuthenticationFlow for DeviceFlow {
+impl AuthenticationFlow for Flow {
     async fn authenticate(&self) -> eyre::Result<AccessToken> {
         let mut token_cache = self.token_cache.lock().await;
         authenticate_with_token_cache(
-            self.scopes.clone(),
+            &self.scopes,
             &mut token_cache,
             |scopes| obtain_new_token(&self.client, scopes),
             |rt, scopes| refresh_token(&self.client, rt, scopes),
@@ -71,19 +73,20 @@ type StoringDeviceAuthorizationResponse = DeviceAuthorizationResponse<StoringFie
 
 async fn obtain_new_token(
     client: &BasicClient,
-    scopes: Vec<Scope>,
+    scopes: &[Scope],
 ) -> eyre::Result<StandardTokenResponse> {
     let details: StoringDeviceAuthorizationResponse = client
         .exchange_device_code()?
-        .add_scopes(scopes)
+        .add_scopes(scopes.iter().cloned())
         .request_async(oauth2::reqwest::async_http_client)
         .await
         .map_err(map_request_token_error)
         .wrap_err("Error exchanging device code")?;
 
+    let uri_string: &String = details.verification_uri();
     tracing::info!(
         "Open this URL in your browser:\n{}\nand enter the code: {}",
-        details.verification_uri().to_string(),
+        uri_string,
         details.user_code().secret().to_string()
     );
 

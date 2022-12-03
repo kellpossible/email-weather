@@ -82,7 +82,7 @@ impl Claims {
     }
 }
 
-fn encode_jwt(key: &Key, scopes: Vec<Scope>) -> eyre::Result<String> {
+fn encode_jwt(key: &Key, scopes: &[Scope]) -> eyre::Result<String> {
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     let claims = Claims::create_now(
         key.client_email.clone(),
@@ -97,14 +97,14 @@ fn encode_jwt(key: &Key, scopes: Vec<Scope>) -> eyre::Result<String> {
     jsonwebtoken::encode(&header, &claims, &encoding_key).map_err(eyre::Error::from)
 }
 
-async fn obtain_new_token(key: &Key, scopes: Vec<Scope>) -> eyre::Result<StandardTokenResponse> {
+async fn obtain_new_token(key: &Key, scopes: &[Scope]) -> eyre::Result<StandardTokenResponse> {
     let assertion = encode_jwt(key, scopes)?;
     let client = reqwest::Client::new();
 
     let mut body = String::new();
     let grant_type = urlencoding::encode("urn:ietf:params:oauth:grant-type:jwt-bearer");
     body.push_str("grant_type=");
-    body.push_str(&*grant_type);
+    body.push_str(&grant_type);
     body.push_str("&assertion=");
     body.push_str(&assertion);
     let response = client
@@ -159,11 +159,11 @@ impl AuthenticationFlow for ServiceAccountFlow {
         let mut token_cache = self.token_cache.lock().await;
 
         authenticate_with_token_cache(
-            self.scopes.clone(),
+            &self.scopes,
             &mut token_cache,
-            |scopes| obtain_new_token(&self.key, scopes),
+            |scopes| obtain_new_token(&self.key, &scopes),
             // Refresh involves just obtaining another token (no refresh token involved).
-            |_, scopes| obtain_new_token(&self.key, scopes),
+            |_, scopes| obtain_new_token(&self.key, &scopes),
         )
         .await
     }
@@ -191,7 +191,7 @@ mod test {
         let key: Key = serde_json::from_str(key_str).unwrap();
         let jwt = encode_jwt(
             &key,
-            vec![oauth2::Scope::new("https://mail.google.com/".to_string())],
+            &[oauth2::Scope::new("https://mail.google.com/".to_string())],
         )
         .unwrap();
         assert_eq!(jwt.len(), 606);

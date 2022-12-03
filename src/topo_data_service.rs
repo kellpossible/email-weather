@@ -7,7 +7,7 @@ use open_topo_data::{Error, Parameters};
 /// Trait used to allow mocking the [open_topo_data] service.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait Port {
+pub trait Port: Send + Sync {
     /// Obtain a weather forecast using [open_meteo::obtain_forecast()].
     async fn obtain_elevation(&self, paramters: &Parameters) -> Result<f32, Error>;
 }

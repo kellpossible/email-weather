@@ -27,8 +27,6 @@ mod device;
 mod installed;
 pub mod service_account;
 
-pub use device::DeviceFlow;
-pub use installed::InstalledFlow;
 pub use service_account::ServiceAccountFlow;
 
 use crate::secrets::OauthSecrets;
@@ -134,7 +132,7 @@ impl TokenCache {
     async fn lock<'a>(&'a self) -> TokenCacheGuard<'a> {
         TokenCacheGuard {
             path: &self.path,
-            guard: self.lock.lock().await,
+            _guard: self.lock.lock().await,
         }
     }
 }
@@ -151,7 +149,7 @@ impl std::fmt::Debug for TokenCache {
 /// Obtain this guard using [`TokenCache::lock()`].
 struct TokenCacheGuard<'a> {
     path: &'a Path,
-    guard: MutexGuard<'a, ()>,
+    _guard: MutexGuard<'a, ()>,
 }
 
 impl std::fmt::Debug for TokenCacheGuard<'_> {
@@ -249,11 +247,11 @@ where
 async fn refresh_token(
     client: &BasicClient,
     refresh_token: RefreshToken,
-    scopes: Vec<Scope>,
+    scopes: &[Scope],
 ) -> eyre::Result<StandardTokenResponse> {
     let mut response = client
         .exchange_refresh_token(&refresh_token)
-        .add_scopes(scopes)
+        .add_scopes(scopes.iter().cloned())
         .request_async(oauth2::reqwest::async_http_client)
         .await
         .map_err(map_request_token_error)
@@ -276,10 +274,10 @@ pub trait AuthenticationFlow {
 }
 
 async fn authenticate_with_token_cache<'a, Fut1, Fut2>(
-    scopes: Vec<Scope>,
+    scopes: &'a [Scope],
     token_cache: &mut TokenCacheGuard<'_>,
-    obtain_new_token: impl FnOnce(Vec<Scope>) -> Fut1,
-    refresh_token: impl FnOnce(RefreshToken, Vec<Scope>) -> Fut2,
+    obtain_new_token: impl FnOnce(&'a [Scope]) -> Fut1,
+    refresh_token: impl FnOnce(RefreshToken, &'a [Scope]) -> Fut2,
 ) -> eyre::Result<AccessToken>
 where
     Fut1: Future<Output = eyre::Result<StandardTokenResponse>> + 'a,
@@ -304,12 +302,12 @@ where
             tracing::debug!("Token in cache has expired.");
             let token_response = if let Some(token) = token_cache_data.response.refresh_token() {
                 tracing::debug!("Using refresh token to automatically obtain a new token");
-                refresh_token(token.clone(), scopes.clone())
+                refresh_token(token.clone(), &scopes)
                     .await
                     .wrap_err("Error while refreshing token")?
             } else {
                 tracing::debug!("No refresh token available, manually obtaining a new token");
-                obtain_new_token(scopes.clone())
+                obtain_new_token(&scopes)
                     .await
                     .wrap_err("Error while obtaining new token")?
             };
@@ -324,7 +322,7 @@ where
             "Token cache {:?} does not exist, obtaining new token",
             token_cache
         );
-        let token_response = obtain_new_token(scopes.clone()).await?;
+        let token_response = obtain_new_token(&scopes).await?;
         tracing::debug!("Successfully obtained new token!");
         let token_cache_data = TokenCacheData::try_new(token_response)?;
         token_cache.write(&token_cache_data).await?;
@@ -405,23 +403,24 @@ pub fn redirect_server(tx: mpsc::Sender<RedirectParameters>) -> Router {
     )
 }
 
+/// Set up the authentication flow.
 pub fn setup_flow(
     secrets: &OauthSecrets,
     base_url: &url::Url,
     oauth_redirect_rx: mpsc::Receiver<RedirectParameters>,
-) -> eyre::Result<InstalledFlow> {
+) -> eyre::Result<installed::Flow> {
     let scopes = vec![
         // https://developers.google.com/gmail/imap/xoauth2-protocol
         oauth2::Scope::new("https://mail.google.com/".to_string()),
     ];
 
     let redirect_url = RedirectUrl::from_url(base_url.join("oauth2")?);
-    Ok(crate::oauth2::InstalledFlow::new(
+    Ok(crate::oauth2::installed::Flow::new(
         ConsentRedirect::Http {
             redirect_rx: Arc::new(Mutex::new(oauth_redirect_rx)),
             url: redirect_url,
         },
-        secrets.client_secret.clone().ok_or_else(|| {
+        &secrets.client_secret.clone().ok_or_else(|| {
             eyre::eyre!(
                 "Client secret has not been provided, and is required for Installed OAUTH2 flow"
             )

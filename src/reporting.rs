@@ -2,13 +2,11 @@
 
 use std::{
     ffi::OsStr,
-    net::SocketAddr,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
 use axum::{
-    http::HeaderValue,
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -18,13 +16,10 @@ use eyre::Context;
 use futures::{stream, Stream, StreamExt, TryStreamExt};
 use html_builder::Html5;
 use reqwest::StatusCode;
-use secrecy::{ExposeSecret, Secret, SecretString};
+use secrecy::SecretString;
 use tokio_stream::wrappers::ReadDirStream;
 use tower::ServiceBuilder;
-use tower_http::{
-    auth::{AuthorizeRequest, RequireAuthorizationLayer},
-    trace::TraceLayer,
-};
+use tower_http::{auth::RequireAuthorizationLayer, trace::TraceLayer};
 use tracing_appender::{
     non_blocking::{NonBlockingBuilder, WorkerGuard},
     rolling::{RollingFileAppender, Rotation},
