@@ -5,7 +5,7 @@ use crate::{
     gis::Position,
     process::{FormatDetail, LongFormatStyle},
     receive::{self, from_account, message_id, text_body, ParseReceivedEmail},
-    request::{ForecastRequest, ParsedForecastRequest},
+    request::ParsedForecastRequest,
 };
 
 /// A plain text email that was received.
@@ -37,7 +37,7 @@ impl ParseReceivedEmail for Received {
     fn parse_email(message: mail_parser::Message) -> Result<Self, Self::Err> {
         let from = from_account(&message)?;
         let message_id = message_id(&message).map(|id| id.to_string());
-        let subject = match message.get_header("Subject") {
+        let subject = match message.header("Subject") {
             Some(subject_header) => match subject_header {
                 mail_parser::HeaderValue::Text(text) => Some(text.to_string()),
                 mail_parser::HeaderValue::Empty => None,

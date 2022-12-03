@@ -5,6 +5,7 @@ use std::{borrow::Cow, sync::Arc};
 use async_imap::types::Fetch;
 use eyre::Context;
 use futures::{StreamExt, TryStreamExt};
+use mail_parser::MessagePart;
 use oauth2::AccessToken;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -60,16 +61,17 @@ pub trait ParseReceivedEmail: Sized {
 }
 
 pub(crate) fn text_body<'a>(message: &'a mail_parser::Message) -> eyre::Result<Cow<'a, str>> {
-    let text_body = message
-        .get_text_body(0)
-        .ok_or_else(|| eyre::eyre!("No text body for message"))?;
-
-    Ok(text_body)
+    message
+        .text_bodies()
+        .next()
+        .and_then(|tb: &MessagePart| tb.text_contents())
+        .map(Cow::Borrowed)
+        .ok_or_else(|| eyre::eyre!("No text body for message"))
 }
 
 pub(crate) fn from_account(message: &mail_parser::Message) -> eyre::Result<email::Account> {
     let from_header: &mail_parser::HeaderValue = message
-        .get_header("From")
+        .header("From")
         .ok_or_else(|| eyre::eyre!("No From header for message"))?;
 
     if let mail_parser::HeaderValue::Address(address) = from_header {
@@ -84,7 +86,7 @@ pub(crate) fn from_account(message: &mail_parser::Message) -> eyre::Result<email
 
 pub(crate) fn message_id<'a>(message: &'a mail_parser::Message) -> Option<&'a Cow<'a, str>> {
     message
-        .get_header("Message-Id")
+        .header("Message-Id")
         .and_then(|header| match header {
             mail_parser::HeaderValue::Text(text) => Some(text),
             _ => {

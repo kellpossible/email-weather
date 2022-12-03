@@ -13,13 +13,13 @@ ansi-to-html = { version = "0.1", features = ["lazy-init"] }
 bytesize = "1.1"
 chumsky = "0.8"
 oauth2 = "4.2"
-axum = "0.5"
+axum = "0.6"
 base64 = "0.13"
 bcrypt = "0.13"
-mail-parser = "0.7"
+mail-parser = "0.8"
 color-eyre = "0.6"
 chrono = "0.4"
-chrono-tz = "0.6" # Sticking with 0.6 until https://github.com/chronotope/chrono-tz/issues/114 is resolved.
+chrono-tz = "0.8" # Sticking with 0.6 until https://github.com/chronotope/chrono-tz/issues/114 is resolved.
 jsonwebtoken = "8.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["fs"] }
@@ -45,8 +45,8 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-error = "0.2"
 # secrecy = { version = "0.8", features = ["serde"] }
-sentry = "0.27"
-sentry-tracing = "0.27"
+sentry = "0.29"
+sentry-tracing = "0.29"
 regex = "1.6"
 rpassword = "7.0"
 futures = "0.3"
