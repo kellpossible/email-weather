@@ -53,3 +53,14 @@ div.email-block-body {
     padding-top: 0.8rem;
     padding-bottom: 0.8rem;
 }
+
+table, td, th {
+    border: 1px solid black;
+    border-collapse: collapse;
+}
+
+td, th {
+    padding: 0.0rem 0.4rem;
+}
+
+

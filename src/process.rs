@@ -184,14 +184,14 @@ impl FormatForecast for ForecastOutput {
         output.push_str(&match options.detail {
             FormatDetail::Short(_) => format!("Tz{formatted_offset} FE{forecast_elevation}"),
             FormatDetail::Long(_) => {
-                format!("Time Zone: {formatted_offset}, Forecast Elevation: {forecast_elevation}")
+                format!("Time Zone: {formatted_offset}, Forecast Elevation: {forecast_elevation}m")
             }
         });
 
         if let Some(terrain_elevation) = self.terrain_elevation {
             output.push_str(&match options.detail {
                 FormatDetail::Short(_) => format!(" TE{terrain_elevation}"),
-                FormatDetail::Long(_) => format!(", Terrain Elevation: {terrain_elevation}"),
+                FormatDetail::Long(_) => format!(", Terrain Elevation: {terrain_elevation}m"),
             });
         }
 
