@@ -10,22 +10,16 @@ weight = 0
 
 # How Use Email Weather
 
-Using the Email Weather Service is simple, you just need to send an email to{{ service_email() }}. See [Email Body](#email-body) section for what information you will need to include in the body of your email in order to obtain a forecast.
-
-# Email Subject
-
+Using the Email Weather Service is simple, you just need to send an email to {{ service_email() }}. 
 The subject of the email can be anything, it can be helpful to use a name for which you are retrieving the forecast.
-
-# Email Body
-
 The contents of the email body depends on which service you are using to send your email.
 
-## Standard Email
+# Standard Email
 
 For any standard email account, you will need to at least provide the requested [position](#position) in the body of your email as part of the [forecast request](#forecast-request). For example to obtain the forecast for [London](https://goo.gl/maps/sUFSPJQ6ByW4y5os6), you can enter the following text in your email body, which is requested forecast position in `latitude,longitude` format:
 
 {% new_email(subject="Forecast for London") %}
-51.5287718,-0.2416804
+<b>51.5287718,-0.2416804</b>
 {% end %}
 
 You can then expect to receive a response similar to:
@@ -34,7 +28,7 @@ You can then expect to receive a response similar to:
 
 See [Forecast Request](#forecast-request) section for more information on what you can request in a forecast.
 
-## InReach
+# InReach
 
 If you are sending an email from an [InReach communication device](https://discover.garmin.com/en-US/inreach/personal/), and you elect to wait for GPS signal before sending the message, you do not need to include the [position](#position) in the [forecast request](#forecast-request), this service will use the position of your device reported at the time the message was sent to obtain the forecast for your location. However, if you want to obtain the forecast for a different location, you can include the [position](#position) in the [forecast request](#forecast-request).
 
