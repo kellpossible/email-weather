@@ -90,6 +90,7 @@ The first line takes the format:
 
 Subsequent lines which form the forecast take the format:
 
+{% horizontal_scroll() %}
 <table>
 <tr>
 <th>Time (day T hour)</th>
@@ -105,6 +106,7 @@ Subsequent lines which form the forecast take the format:
 <td>04T09</td><td>C53</td><td>F6</td><td>W1@9</td><td>P1</td>
 </tr>
 </table>
+{% end %}
 
 The [WMO 4677 Present Weather Code](https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM) is a 1 or 2 digit number representing the state of the weather:
 
