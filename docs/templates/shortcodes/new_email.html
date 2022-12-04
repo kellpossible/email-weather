@@ -1,0 +1,8 @@
+{%- import 'mymacros.html' as mymacros -%}
+{% if subject %}{% set subject = subject %}{% else %}{% set subject = "" %}{% endif %}
+{% if body_path %}
+    {% set body = load_data(path=body_path, format="plain") %}
+{% else %}
+    {% if body %}{% set body = body %}{% else %}{% set body = "" %}{% endif %}
+{% endif %}
+{{ mymacros::new_email(subject=subject, body=body) }}

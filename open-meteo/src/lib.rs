@@ -15,9 +15,11 @@ use serde::{
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize,
 };
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
 /// WMO Weather interpretation code (WW)
-#[derive(Clone, Copy, Debug)]
+#[derive(EnumIter, Clone, Copy, Debug)]
 pub enum WeatherCode {
     /// Code: 0
     ClearSky = 0,
@@ -81,6 +83,21 @@ pub enum WeatherCode {
     ///
     /// *Note: Thunderstorm forecast with hail is only available in Central Europe*
     ThunderstormHailHeavy = 99,
+}
+
+static WEATHER_CODE_VARIANTS: Lazy<Vec<WeatherCode>> = Lazy::new(|| {
+    WeatherCode::iter().collect()
+});
+
+impl WeatherCode {
+    /// Enumerate all variants of WeatherCode.
+    pub fn enumerate() -> &'static [WeatherCode] {
+        WEATHER_CODE_VARIANTS.as_slice()
+    }
+
+    pub fn code(&self) -> u8 {
+        *self as u8
+    }
 }
 
 impl<'de> Deserialize<'de> for WeatherCode {
@@ -388,7 +405,7 @@ impl<'de> Deserialize<'de> for HourlyVariable {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(EnumIter, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum GroundLevel {
     /// 10m above the ground.
     L10 = 10,
@@ -412,9 +429,13 @@ impl GroundLevel {
     }
 }
 
+static GROUND_LEVEL_VARIANTS: Lazy<Vec<GroundLevel>> = Lazy::new(|| {
+    GroundLevel::iter().collect()
+});
+
 impl Level for GroundLevel {
     fn enumerate() -> &'static [Self] {
-        &[Self::L10, Self::L80, Self::L120, Self::L180]
+        GROUND_LEVEL_VARIANTS.as_slice()
     }
 }
 
@@ -458,7 +479,7 @@ impl LevelField<GroundLevel> for WindSpeedField {
 /// Speed of the wind.
 pub type WindSpeed = LevelVariable<GroundLevel, WindSpeedField, Vec<f32>>;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(EnumIter, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum PressureLevel {
     L1000 = 1000,
     L975 = 975,
@@ -508,29 +529,13 @@ impl PressureLevel {
     }
 }
 
+static PRESSURE_LEVEL_VARIANTS: Lazy<Vec<PressureLevel>> = Lazy::new(|| {
+    PressureLevel::iter().collect()
+});
+
 impl Level for PressureLevel {
     fn enumerate() -> &'static [Self] {
-        &[
-            Self::L1000,
-            Self::L975,
-            Self::L950,
-            Self::L925,
-            Self::L900,
-            Self::L850,
-            Self::L800,
-            Self::L700,
-            Self::L600,
-            Self::L500,
-            Self::L400,
-            Self::L300,
-            Self::L250,
-            Self::L200,
-            Self::L150,
-            Self::L100,
-            Self::L70,
-            Self::L50,
-            Self::L30,
-        ]
+        PRESSURE_LEVEL_VARIANTS.as_slice()
     }
 }
 

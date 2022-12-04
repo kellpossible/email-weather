@@ -1,0 +1,20 @@
+{% extends "index.html" %}
+
+{% block title %}{{ page.title }} | {{ super() }} {% endblock title %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ get_url(path="email-block.css") }}">
+<link rel="stylesheet" href="{{ get_url(path="print.css") }}">
+{% endblock head %}
+
+{% block header %}
+<header class="box-shadow">
+    {{ macros::render_header() }}
+</header>
+{% endblock header %}
+
+{% block content %}
+<div class="heading-text">{{ page.description }}</div>
+<div class="print-hidden">This page has been optimised for printing, hit <b>ctrl+P</b> to print the page (you can print to a PDF document).</div>
+{{ page.content | safe }}
+{% endblock content %}

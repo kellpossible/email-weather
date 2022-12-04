@@ -73,7 +73,7 @@ impl ParseReceivedEmail for Received {
 
 /// Trim the body to only include the request line, removing extra newlines, and quoted replies.
 fn trim_body<'a>(body: &'a str) -> &'a str {
-    if let Some(first_non_whitespace_i) = body.find(|c: char| !c.is_whitespace()) {
+    let trimmed = if let Some(first_non_whitespace_i) = body.find(|c: char| !c.is_whitespace()) {
         let request_content_onwards = if first_non_whitespace_i == 0 {
             body
         } else {
@@ -89,7 +89,9 @@ fn trim_body<'a>(body: &'a str) -> &'a str {
         request_content_onwards.split_at(end_request_i).0
     } else {
         body
-    }
+    };
+
+    trimmed.trim()
 }
 
 #[cfg(test)]

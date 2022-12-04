@@ -1,12 +1,19 @@
-div.email-block {
+div.email-block-new {
     background-color: white;
+    box-shadow: 0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12),0px 5px 5px -3px rgba(0,0,0,.2);
+}
+
+div.email-block-new-top {
     border-radius: 1rem 1rem 0 0;
+}
+
+div.email-block-response {
+    background-color: white;
     box-shadow: 0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12),0px 5px 5px -3px rgba(0,0,0,.2);
 }
 
 div.email-block-heading-bar {
     background-color: #f2f2f2;
-    border-radius: 1rem 1rem 0 0;
 }
 
 div.email-block-heading {
@@ -22,6 +29,11 @@ div.email-block-heading {
 
 span.email-block-top-label {
     font-weight: 500;
+}
+
+span.email-block-top-label-small {
+    font-size: 1.0rem;
+    color: #5e5e5e;
 }
 
 div.email-block-top-section {

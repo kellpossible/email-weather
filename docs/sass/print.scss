@@ -1,0 +1,31 @@
+ @media print {
+    body {
+        background-color: white !important;
+    }
+    main {
+        padding: 0rem 0rem;
+    }
+
+    div.content {
+        width: fit-content;
+        height: fit-content;
+        display: inline-block;
+    }
+
+    div.email-block-new {
+        display: block !important;
+        break-inside: avoid;
+    }
+    div.email-block-response {
+        display: block !important;
+        break-inside: avoid;
+    }
+    h1 {
+        page-break-before: always;
+    }
+
+    div.toc, div.print-hidden, footer {
+        display: none;
+    }
+}
+

@@ -1,0 +1,6 @@
+{% set data = load_data(path=path, format="plain") %}
+{% if html %}
+{{ data | safe }}
+{% else %}
+{{ data | safe | markdown | safe }}
+{% endif %}

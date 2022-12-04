@@ -2,18 +2,35 @@
 <a href="mailto:{{ config.extra.service_email }}">{{ config.extra.service_email }}</a>
 {% endmacro service_email %}
 
-{% macro email_block(body="", subject="") %}
-<div class="email-block">
-    <div class="email-block-heading-bar">
+{% macro new_email(subject="", body="") %}
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
         <div class="email-block-heading">New Message</div>
     </div>
     <div class="email-block-inner">
         <div class="email-block-top-section">
             <div><span class="email-block-top-label">To</span> {{ config.extra.service_email }}</div>
         </div>
+        {% set subject_length = subject | length %}
+        {% if subject_length != 0 %}
         <div class="email-block-top-section"><span class="email-block-top-label">Subject</span> {{ subject }}</div>
-        <div class="email-block-body">{{ body }}</div>
+        {% endif %}
+        <div class="email-block-body">{{ body | safe }}</div>
     </div>
 </div>
-{% endmacro email_block %}
+{% endmacro new_email %}
 
+{% macro response_email(subject="", body="", request_body="") %}
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">{{ config.extra.service_email }}</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body">{{ body | safe }}</div>
+    </div>
+</div>
+{% endmacro response_email %}
