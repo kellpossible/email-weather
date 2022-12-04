@@ -77,6 +77,7 @@ While it may appear cryptic at first, the response is fairly easy to understand.
 
 The first line takes the format:
 
+{% horizontal_scroll() %}
 <table>
 <tr>
 <th>Timezone</th>
@@ -87,6 +88,7 @@ The first line takes the format:
 <tr>
 </tr>
 </table>
+{% end %}
 
 Subsequent lines which form the forecast take the format:
 
