@@ -1,0 +1,4 @@
+User-agent: *
+Disallow:
+Allow: /
+Sitemap: https://kellpossible.github.io/email-weather/sitemap.xml

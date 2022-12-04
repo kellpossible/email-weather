@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Deployment |  </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    
+<link rel="icon" type="image/png" href="https://kellpossible.github.io/email-weather/favicon.ico">
+
+    <style>
+    :root {
+        /* Primary theme color */
+        --primary-color: #FED43F;
+        /* Primary theme text color */
+        --primary-text-color: #543631;
+        /* Primary theme link color */
+        --primary-link-color: #F9BB2D;
+        /* Secondary color: the background body color */
+        --secondary-color: #fcfaf6;
+        --secondary-text-color: #303030;
+        /* Highlight text color of table of content */
+        --toc-highlight-text-color: #d46e13;
+    }
+</style>
+
+    <link href="https://fonts.googleapis.com/css?family=Alfa+Slab+One&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Fira+Sans:400,500,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/normalize.css">
+    <link rel="stylesheet" href="https://kellpossible.github.io/email-weather/juice.css">
+    
+<link rel="stylesheet" href="https://kellpossible.github.io/email-weather/style.css">
+
+</head>
+
+<body>
+    
+<header class="box-shadow">
+    
+
+<a href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;">
+    <div class="logo">
+        <img src="https://kellpossible.github.io/email-weather/logo.svg" alt="logo">
+        Email Weather
+    </div>
+</a>
+
+<nav>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;manual&#x2F;">User Manual</a>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;changelog&#x2F;">Changelog</a>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;deployment&#x2F;">Deployment</a>
+    
+    
+        
+        <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;github.com&#x2F;kellpossible&#x2F;email-weather">Github</a>
+        
+    
+</nav>
+
+</header>
+
+
+    <main>
+        
+        
+        
+        
+        
+        <div class="toc">
+            <div class="toc-sticky">
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#logs">Logs</a>
+                </div>
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#oauth2-imap-and-smtp-for-email">OAUTH2, IMAP and SMTP for Email</a>
+                </div>
+                
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#gmail"><small>- Gmail</small></a>
+                </div>
+                
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#secrets">Secrets</a>
+                </div>
+                
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#client-secret-secrets-client-secret-json"><small>- CLIENT_SECRET | secrets&#x2F;client_secret.json</small></a>
+                </div>
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#token-cache-secrets-token-cache-json"><small>- TOKEN_CACHE | secrets&#x2F;token_cache.json</small></a>
+                </div>
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#admin-password-hash-secrets-admin-password-hash"><small>- ADMIN_PASSWORD_HASH | secrets&#x2F;admin_password_hash</small></a>
+                </div>
+                
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/deployment/#options">Options</a>
+                </div>
+                
+                
+            </div>
+        </div>
+        
+        
+
+        <div class="content text">
+            
+<div class="heading-text">Deployment Instructions</div>
+<p>This document provides instructions and information to enable someone to deploy their own personal instance of this service.</p>
+<h2 id="logs">Logs</h2>
+<p>This service is currently designed around a deployment using <a href="https://fly.io/">fly.io</a>. </p>
+<p>Fly <a href="https://community.fly.io/t/getting-fly-logs/4011">has limited logging capabilities</a> (the history is severly limited), setting up <a href="https://github.com/superfly/fly-log-shipper">fly-log-shipper</a> is unecessarily complicated, so it was decided to build a system for viewing application logs using the http server running on this server that was already required for OAUTH2 redirects. </p>
+<p>These logs are available on the route <code>/logs/</code>, and are stored in the <code>data</code> directory as specified in <a href="https://kellpossible.github.io/email-weather/deployment/#options">Options</a>. Accessing this route requires basic authentication using the user <code>admin</code>, and the password who's hash is specified in <a href="https://kellpossible.github.io/email-weather/deployment/#secrets">Secrets</a>. <strong>Be aware</strong> that this transmits the password in plain text and is not appropriate for a plain http connection.</p>
+<h2 id="oauth2-imap-and-smtp-for-email">OAUTH2, IMAP and SMTP for Email</h2>
+<p>The <code>email-weather</code> service relies on having access to an email account to receive and reply to emails. Currently only the Gmail service is being tested and supported, but if you'd like to deploy it with another service, feel free to <a href="https://github.com/kellpossible/email-weather/issues">post an issue</a> to request support for your email provider of choice and we can investigate supporting it. The code for many of the alternative methods of OAUTH2 authentication has already been implemented (currently unused) during the quest to figure out reliable access to Gmail.</p>
+<h3 id="gmail">Gmail</h3>
+<p>In order to access a Gmail account with this service, you will first need to enable the following features in your Gmail account:</p>
+<ul>
+<li><a href="https://support.google.com/mail/answer/7126229#zippy=%2Cstep-check-that-imap-is-turned-on">Turn on IMAP</a>.</li>
+<li>Turn on SMTP (TODO).</li>
+</ul>
+<p>You can read more about how this is used in the <a href="https://developers.google.com/gmail/imap/imap-smtp">IMAP, POP, and SMTP Gmail Documentation</a>.</p>
+<p>You will also need to set up OAUTH2:</p>
+<ol>
+<li>Register your service as an application.</li>
+<li>Publish your service (ignore the warnings about verification)</li>
+<li>Authenticate with your Gmail account using the link provided in the logs.</li>
+</ol>
+<p>Further Reading:</p>
+<ul>
+<li><a href="https://developers.google.com/gmail/imap/xoauth2-protocol">https://developers.google.com/gmail/imap/xoauth2-protocol</a></li>
+<li><a href="https://developers.google.com/identity/protocols/oauth2">https://developers.google.com/identity/protocols/oauth2</a></li>
+</ul>
+<h2 id="secrets">Secrets</h2>
+<h3 id="client-secret-secrets-client-secret-json"><code>CLIENT_SECRET</code> | <code>secrets/client_secret.json</code></h3>
+<h3 id="token-cache-secrets-token-cache-json"><code>TOKEN_CACHE</code> | <code>secrets/token_cache.json</code></h3>
+<h3 id="admin-password-hash-secrets-admin-password-hash"><code>ADMIN_PASSWORD_HASH</code> | <code>secrets/admin_password_hash</code></h3>
+<p>The administrator password to be used for viewing debug/log information about the application. If this secret is not provided, then the debug/log http interface is disabled. <strong>Note</strong>: this is designed to be used when the service is running behind a proxy providing TLS, otherwise the user password will be transmitted in plain text.</p>
+<p>The password needs to be hashed using <a href="https://en.wikipedia.org/wiki/Bcrypt">bcrypt</a>, you can use the provided <code>admin-password-hash</code> utility to create your own:</p>
+<pre data-lang="bash" class="language-bash "><code class="language-bash" data-lang="bash">$ cargo run -p admin-password-hash
+Enter password to be hashed:🔒
+$2b$10$sl6AVe96a.smPQW1EHlEtuEyD4rxWvjLIIvDmKgghteQXqjaGDdka
+</code></pre>
+<p>Beware, the <code>$</code> signs may mess with your shell, and require escaping, or the use of single quote, for example: <code>ADMIN_PASSWORD_HASH='$2b$10$sl6AVe96a.smPQW1EHlEtuEyD4rxWvjLIIvDmKgghteQXqjaGDdka'</code>.</p>
+<h2 id="options">Options</h2>
+<p>Options for running the application are specified in <a href="https://github.com/ron-rs/ron">ron</a> format. See <code>struct Options</code> in <a href="https://github.com/kellpossible/email-weather/blob/main/src/options.rs">options.rs</a> for description of the available options.</p>
+<p>By default, the application will attempt to load options from the file <code>options.rs</code>, however you may also elect to one of the following:</p>
+<ul>
+<li>Specify a custom path to options RON file in environment variable <code>OPTIONS</code>. (e.g. <code>OPTIONS=&quot;path/to/options.ron&quot;</code>).</li>
+<li>Specify options in RON format with the value for the environment variable <code>OPTIONS</code>. (e.g. <code>OPTIONS=&quot;Options(...)&quot;</code>).</li>
+</ul>
+
+
+        </div>
+
+        
+        
+    </main>
+
+    
+<footer>
+    <small class="subtext">
+        <a href="http://lukefrisken.com/">Luke Frisken</a> © 2022
+    </small>
+</footer>
+
+</body>
+<script>
+    const scrollHandler = entries => {
+        // Find the first entry which intersecting and ratio > 0.9 to highlight.
+        let entry = entries.find(entry => {
+            return entry.isIntersecting && entry.intersectionRatio > 0.9;
+        });
+        if (!entry) return;
+
+        document.querySelectorAll(".toc a").forEach((item) => {
+            item.classList.remove("active");
+        });
+
+        // let url = new URL(`#${entry.target.id}`);
+        let link = document.querySelector(`.toc a[href$="${decodeURIComponent(`#${entry.target.id}`)}"]`)
+        if (link) {
+            link.classList.add("active");
+            link.scrollIntoView({ behavior: "auto", block: "nearest" });
+        }
+    };
+    // Set -100px root margin to improve highlight experience.
+    const observer = new IntersectionObserver(scrollHandler, { threshold: 1 });
+    let items = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+    items.forEach(item => observer.observe(item));
+</script>
+
+</html>

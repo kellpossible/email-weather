@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>User Manual |  </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    
+<link rel="icon" type="image/png" href="https://kellpossible.github.io/email-weather/favicon.ico">
+
+    <style>
+    :root {
+        /* Primary theme color */
+        --primary-color: #FED43F;
+        /* Primary theme text color */
+        --primary-text-color: #543631;
+        /* Primary theme link color */
+        --primary-link-color: #F9BB2D;
+        /* Secondary color: the background body color */
+        --secondary-color: #fcfaf6;
+        --secondary-text-color: #303030;
+        /* Highlight text color of table of content */
+        --toc-highlight-text-color: #d46e13;
+    }
+</style>
+
+    <link href="https://fonts.googleapis.com/css?family=Alfa+Slab+One&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Fira+Sans:400,500,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/normalize.css">
+    <link rel="stylesheet" href="https://kellpossible.github.io/email-weather/juice.css">
+    
+<link rel="stylesheet" href="https://kellpossible.github.io/email-weather/style.css">
+<link rel="stylesheet" href="https://kellpossible.github.io/email-weather/print.css">
+
+</head>
+
+<body>
+    
+<header class="box-shadow">
+    
+
+<a href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;">
+    <div class="logo">
+        <img src="https://kellpossible.github.io/email-weather/logo.svg" alt="logo">
+        Email Weather
+    </div>
+</a>
+
+<nav>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;manual&#x2F;">User Manual</a>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;changelog&#x2F;">Changelog</a>
+    
+    <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;kellpossible.github.io&#x2F;email-weather&#x2F;deployment&#x2F;">Deployment</a>
+    
+    
+        
+        <a class="nav-item subtitle-text" href="https:&#x2F;&#x2F;github.com&#x2F;kellpossible&#x2F;email-weather">Github</a>
+        
+    
+</nav>
+
+</header>
+
+
+    <main>
+        
+        
+        
+        
+        
+        <div class="toc">
+            <div class="toc-sticky">
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#how-use-email-weather">How Use Email Weather</a>
+                </div>
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#standard-email">Standard Email</a>
+                </div>
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#inreach">InReach</a>
+                </div>
+                
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#limitations"><small>- Limitations</small></a>
+                </div>
+                
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#forecast-request">Forecast Request</a>
+                </div>
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#position">Position</a>
+                </div>
+                
+                
+                <div class="toc-item">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#format">Format</a>
+                </div>
+                
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#short"><small>- Short</small></a>
+                </div>
+                
+                <div class="toc-item-child">
+                    <a class="subtext" href="https://kellpossible.github.io/email-weather/manual/#long"><small>- Long</small></a>
+                </div>
+                
+                
+                
+            </div>
+        </div>
+        
+        
+
+        <div class="content text">
+            
+<div class="heading-text"><img src="https://kellpossible.github.io/email-weather/logo.svg" alt="logo" class="heading-logo print-visible">Email Weather Service User Manual</div>
+<div class="print-hidden">
+This page has been optimised for printing, hit <b>ctrl+P</b> to print the page (you can print to a PDF document).
+The print scale is optimal at about 75%.
+</div>
+
+
+<h1 id="disclaimer-and-license">Disclaimer and License</h1>
+<p>This experimental service is provided free to community, and the <a href="https://github.com/kellpossible/email-weather/graphs/contributors">contributors to this project</a> do not accept any legal responsibility for the quality of the forecasts that are provided, or the quality of service on offer. </p>
+<p><b>Use this service/software at your own risk, and at your own expense</b>, there may be unexpected innacuracies, bugs or service interruptions. Some satellite communication services charge per message, care has been taken to reduce the number and length of messages, and to prevent accidental overuse, however the contributors accept no responsibility for unexpected expenses resulting from the use of this service/software.</p>
+<p>It is highly recommended to cross-check forecasts provided by this service with other sources of information to help make the most informed judgement about weather conditions in your area. Weather data is currently provided by <a href="https://open-meteo.com/">Open-Meteo.com</a> under the <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a> license. This software is open source (available <a href="https://github.com/kellpossible/email-weather">on GitHub</a>) and licensed under the <a href="https://github.com/kellpossible/email-weather/blob/main/LICENSE">MIT Software License</a>.</p>
+
+
+<h1 id="how-use-email-weather">How Use Email Weather</h1>
+<p>Using the Email Weather Service is simple, you just need to send an email to 
+<a href="mailto:email.weather.service@gmail.com">email.weather.service@gmail.com</a>
+
+. 
+The subject of the email can be anything, it can be helpful to use a name for which you are retrieving the forecast.
+The contents of the email body depends on which service you are using to send your email.</p>
+<h1 id="standard-email">Standard Email</h1>
+<p>For any standard email account, you will need to at least provide the requested <a href="https://kellpossible.github.io/email-weather/manual/#position">position</a> in the body of your email as part of the <a href="https://kellpossible.github.io/email-weather/manual/#forecast-request">forecast request</a>. For example to obtain the forecast for <a href="https://goo.gl/maps/sUFSPJQ6ByW4y5os6">London</a>, you can enter the following text in your email body, which is requested forecast position in <code>latitude,longitude</code> format:</p>
+
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-top-section"><span class="email-block-top-label">Subject</span> Forecast for London</div>
+        
+        <div class="email-block-body"><b>51.5287718,-0.2416804</b></div>
+    </div>
+</div>
+
+<p>You can then expect to receive a response similar to:</p>
+
+
+    
+
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">email.weather.service@gmail.com</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body"><pre>TzGMT FE33 TE34
+04T03 C3 F7 W1@3 P0
+04T09 C53 F6 W1@9 P0
+04T15 C3 F17 W1@6 P0
+04T21 C3 F18 W1@4 P0
+05T03 C61 F19 W1@2 P0
+...</pre>
+</div>
+    </div>
+</div>
+
+
+
+<p>See <a href="https://kellpossible.github.io/email-weather/manual/#forecast-request">Forecast Request</a> section for more information on what you can request in a forecast.</p>
+<h1 id="inreach">InReach</h1>
+<p>If you are sending an email from an <a href="https://discover.garmin.com/en-US/inreach/personal/">InReach communication device</a>, and you elect to wait for GPS signal before sending the message, you do not need to include the <a href="https://kellpossible.github.io/email-weather/manual/#position">position</a> in the <a href="https://kellpossible.github.io/email-weather/manual/#forecast-request">forecast request</a>, this service will use the position of your device reported at the time the message was sent to obtain the forecast for your location. However, if you want to obtain the forecast for a different location, you can include the <a href="https://kellpossible.github.io/email-weather/manual/#position">position</a> in the <a href="https://kellpossible.github.io/email-weather/manual/#forecast-request">forecast request</a>.</p>
+<h3 id="limitations">Limitations</h3>
+<p>Using the InReach with this service currently has the following limitations:</p>
+<ul>
+<li>A maximum of 160 characters in the reply message.</li>
+<li>Only the <a href="https://kellpossible.github.io/email-weather/manual/#short">short format</a> is supported (due to the above limitation).</li>
+</ul>
+<h1 id="forecast-request">Forecast Request</h1>
+<p>The forecast request is specified in the body of email that you send to 
+<a href="mailto:email.weather.service@gmail.com">email.weather.service@gmail.com</a>
+
+ with a specific syntax which is described in the subsequent sections of this document. Please ensure that you use only plain text, don't apply formatting or HTML email signatures to your mail if possible to ensure maximum compatibility with the service.</p>
+<h1 id="position">Position</h1>
+<p>Position for the requested forecast is specified using <code>latitude,longitude</code> format.</p>
+
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-body"><b>51.5287718,-0.2416804</b></div>
+    </div>
+</div>
+
+<p>The position always needs to be in the first position of your request. For instance, here is a position in combination with a <a href="https://kellpossible.github.io/email-weather/manual/#format">Format Detail</a>.</p>
+<p>
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-body"><b>51.5287718,-0.2416804</b> ML</div>
+    </div>
+</div>
+
+
+<br></p>
+<h1 id="format">Format</h1>
+<p>There are many options available for you to customise the format of the forecast message you will receive.
+The format specification is specified preceding with an <code>M</code>, followed by the specification. The default format is <a href="https://kellpossible.github.io/email-weather/manual/#short"><code>MS</code> Short</a>.</p>
+<h2 id="short">Short</h2>
+<p>Short format (<code>MS</code>) produces a forecast message which is extremely short, optimised for use with satellite communciation devices like the <a href="https://kellpossible.github.io/email-weather/manual/#inreach">InReach</a>.</p>
+<p>
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-body">51.5287718,-0.2416804 <b>MS</b></div>
+    </div>
+</div>
+
+
+
+
+    
+
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">email.weather.service@gmail.com</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body"><pre>TzGMT FE33 TE34
+04T03 C3 F7 W1@3 P0
+04T09 C53 F6 W1@9 P0
+04T15 C3 F17 W1@6 P0
+04T21 C3 F18 W1@4 P0
+05T03 C61 F19 W1@2 P0
+...</pre>
+</div>
+    </div>
+</div>
+
+
+
+</p>
+<p>While it may appear cryptic at first, the response is fairly easy to understand.</p>
+<p>The first line takes the format:</p>
+<div style="overflow-x: scroll;">
+<table>
+<tr>
+<th>Timezone</th>
+<th>Forecast Elevation (meters)</th>
+<th>Terrain Elevation (meters)</th>
+</tr>
+<td>TzGMT</td><td>FE33</td><td>TE34</td>
+<tr>
+</tr>
+</table>
+</div>
+<p>Subsequent lines which form the forecast take the format:</p>
+<div style="overflow-x: scroll;">
+<table>
+<tr>
+<th>Time (day T hour)</th>
+<th>WMO Weather Code</th>
+<th>Freezing Level (meters/100)</th>
+<th>Wind (speed kmh/10 @ direction °/10)</th>
+<th>Precipitation (mm cummulative since previous entry)</th>
+</tr>
+<tr>
+<td>04T03</td><td>C3</td><td>F7</td><td>W1@3</td><td>P0</td>
+</tr>
+<tr>
+<td>04T09</td><td>C53</td><td>F6</td><td>W1@9</td><td>P1</td>
+</tr>
+</table>
+</div>
+<p>The <a href="https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM">WMO 4677 Present Weather Code</a> is a 1 or 2 digit number representing the state of the weather:</p>
+
+
+<!-- You can obtain an update table by running 
+the open_meteo/examples/weather_codes.rs example -->
+<table>
+<tr><th>Code</th><th>Description</th></tr><tr><td>0</td><td>clear sky</td></tr>
+<tr><td>1</td><td>mainly clear</td></tr>
+<tr><td>2</td><td>partly cloudy</td></tr>
+<tr><td>3</td><td>overcast</td></tr>
+<tr><td>45</td><td>fog</td></tr>
+<tr><td>48</td><td>fog depositing rime</td></tr>
+<tr><td>51</td><td>light drizzle</td></tr>
+<tr><td>53</td><td>moderate drizzle</td></tr>
+<tr><td>55</td><td>dense drizzle</td></tr>
+<tr><td>56</td><td>light freezing drizzle</td></tr>
+<tr><td>57</td><td>dense freezing drizzle</td></tr>
+<tr><td>61</td><td>slight rain</td></tr>
+<tr><td>63</td><td>moderate rain</td></tr>
+<tr><td>65</td><td>heavy rain</td></tr>
+<tr><td>66</td><td>light freezing rain</td></tr>
+<tr><td>67</td><td>heavy freezing rain</td></tr>
+<tr><td>71</td><td>slight snow</td></tr>
+<tr><td>73</td><td>moderate snow</td></tr>
+<tr><td>75</td><td>heavy snow</td></tr>
+<tr><td>77</td><td>snow grains</td></tr>
+<tr><td>80</td><td>slight rain showers</td></tr>
+<tr><td>81</td><td>moderate rain showers</td></tr>
+<tr><td>82</td><td>violent rain showers</td></tr>
+<tr><td>85</td><td>slight snow showers</td></tr>
+<tr><td>86</td><td>heavy snow showers</td></tr>
+<tr><td>95</td><td>slight or moderate thunderstorm</td></tr>
+<tr><td>96</td><td>slight thunderstorm with hail</td></tr>
+<tr><td>99</td><td>heavy thunderstorm with hail</td></tr>
+</table>
+
+
+<h2 id="long">Long</h2>
+<p>With the Long format (<code>ML</code>) specified, the email will produce a more detailed forecast report, the default long format type is the <a href="https://kellpossible.github.io/email-weather/manual/#html">HTML Format (<code>MLH</code>)</a>, the <code>H</code> is optional.</p>
+<p>
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-top-section"><span class="email-block-top-label">Subject</span> Forecast for London</div>
+        
+        <div class="email-block-body">51.5287718,-0.2416804 <b>ML</b></div>
+    </div>
+</div>
+
+
+<br></p>
+<h3 id="html">HTML</h3>
+<p>The long HTML format (<code>MLH</code>) produces both a detailed plain text and HTML version of the forecast report, included in the same email.
+Depending on your email client configuration either the plain text, or html version will be displayed.</p>
+<p>
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-top-section"><span class="email-block-top-label">Subject</span> Forecast for London</div>
+        
+        <div class="email-block-body">51.5287718,-0.2416804 <b>MLH</b></div>
+    </div>
+</div>
+
+
+
+
+    
+
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">email.weather.service@gmail.com</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body"><pre>
+Time Zone: GMT, Forecast Elevation: 33m, Terrain Elevation: 34m
++---------------------+---------------+----------------+-----------------+---------------+
+| Time                | Weather Code  | Freezing Level | Wind            | Precipitation |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 06:00:00 | slight rain   | 640m           | 11 km/h at 41°  | 0.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 12:00:00 | overcast      | 690m           | 12 km/h at 83°  | 1.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 18:00:00 | overcast      | 1790m          | 11 km/h at 48°  | 0.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+|        ...          |     ...       |       ...      |       ...       |      ...      |
+</pre>
+</div>
+    </div>
+</div>
+
+
+
+
+
+
+    
+
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">email.weather.service@gmail.com</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body">Time Zone: GMT, Forecast Elevation: 33m, Terrain Elevation: 34m<br><table sty=
+le=3D"border: 1px solid black;border-collapse: collapse;">
+<tr>
+  <th style=3D"border: 1px solid black;border-collapse: collapse;">
+Time  </th>
+  <th style=3D"border: 1px solid black;border-collapse: collapse;">
+Weather Code  </th>
+  <th style=3D"border: 1px solid black;border-collapse: collapse;">
+Freezing Level  </th>
+  <th style=3D"border: 1px solid black;border-collapse: collapse;">
+Wind  </th>
+  <th style=3D"border: 1px solid black;border-collapse: collapse;">
+Precipitation  </th>
+ </tr>
+ <tr>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+2022-12-04 06:00:00  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+slight rain  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+640m  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+11 km/h at 41=C2=B0  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+0.0mm  </td>
+ </tr>
+ <tr>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+2022-12-04 12:00:00  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+overcast  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+690m  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+12 km/h at 83=C2=B0  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+1.0mm  </td>
+ </tr>
+ <tr>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+2022-12-04 18:00:00  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+overcast  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+1790m  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+11 km/h at 48=C2=B0  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+0.0mm  </td>
+ </tr>
+ <tr>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+...  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+...  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+...  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+...  </td>
+  <td style=3D"border: 1px solid black;border-collapse: collapse;">
+...  </td>
+ </tr>
+</table>
+</div>
+    </div>
+</div>
+
+
+
+</p>
+<h3 id="plain">Plain</h3>
+<p>The long plain format (<code>MLP</code>) produces a detailed plain text version of the forecast report. Some email clients have trouble displaying it nicely, so you may be better off with the <a href="https://kellpossible.github.io/email-weather/manual/#html">Long HTML</a> format instead.</p>
+<p>
+
+    
+
+
+<div class="email-block-new email-block-new-top">
+    <div class="email-block-heading-bar email-block-new-top">
+        <div class="email-block-heading">New Message</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">To</span> email.weather.service@gmail.com</div>
+        </div>
+        
+        
+        <div class="email-block-top-section"><span class="email-block-top-label">Subject</span> Forecast for London</div>
+        
+        <div class="email-block-body">51.5287718,-0.2416804 <b>MLP</b></div>
+    </div>
+</div>
+
+
+
+
+    
+
+<div class="email-block-response">
+    <div class="email-block-heading-bar">
+        <div class="email-block-heading">Response</div>
+    </div>
+    <div class="email-block-inner">
+        <div class="email-block-top-section">
+            <div><span class="email-block-top-label">email.weather.service@gmail.com</span></div>
+            <div><span class="email-block-top-label-small">to me (0 minutes ago)</span></div>
+        </div>
+        <div class="email-block-body"><pre>
+Time Zone: GMT, Forecast Elevation: 33m, Terrain Elevation: 34m
++---------------------+---------------+----------------+-----------------+---------------+
+| Time                | Weather Code  | Freezing Level | Wind            | Precipitation |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 06:00:00 | slight rain   | 640m           | 11 km/h at 41°  | 0.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 12:00:00 | overcast      | 690m           | 12 km/h at 83°  | 1.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+| 2022-12-04 18:00:00 | overcast      | 1790m          | 11 km/h at 48°  | 0.0mm         |
++---------------------+---------------+----------------+-----------------+---------------+
+|        ...          |     ...       |       ...      |       ...       |      ...      |
+</pre>
+</div>
+    </div>
+</div>
+
+
+
+</p>
+
+
+        </div>
+
+        
+        
+    </main>
+
+    
+<footer>
+    <small class="subtext">
+        <a href="http://lukefrisken.com/">Luke Frisken</a> © 2022
+    </small>
+</footer>
+
+</body>
+<script>
+    const scrollHandler = entries => {
+        // Find the first entry which intersecting and ratio > 0.9 to highlight.
+        let entry = entries.find(entry => {
+            return entry.isIntersecting && entry.intersectionRatio > 0.9;
+        });
+        if (!entry) return;
+
+        document.querySelectorAll(".toc a").forEach((item) => {
+            item.classList.remove("active");
+        });
+
+        // let url = new URL(`#${entry.target.id}`);
+        let link = document.querySelector(`.toc a[href$="${decodeURIComponent(`#${entry.target.id}`)}"]`)
+        if (link) {
+            link.classList.add("active");
+            link.scrollIntoView({ behavior: "auto", block: "nearest" });
+        }
+    };
+    // Set -100px root margin to improve highlight experience.
+    const observer = new IntersectionObserver(scrollHandler, { threshold: 1 });
+    let items = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+    items.forEach(item => observer.observe(item));
+</script>
+
+</html>
