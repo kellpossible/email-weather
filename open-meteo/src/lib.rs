@@ -85,9 +85,7 @@ pub enum WeatherCode {
     ThunderstormHailHeavy = 99,
 }
 
-static WEATHER_CODE_VARIANTS: Lazy<Vec<WeatherCode>> = Lazy::new(|| {
-    WeatherCode::iter().collect()
-});
+static WEATHER_CODE_VARIANTS: Lazy<Vec<WeatherCode>> = Lazy::new(|| WeatherCode::iter().collect());
 
 impl WeatherCode {
     /// Enumerate all variants of WeatherCode.
@@ -429,9 +427,7 @@ impl GroundLevel {
     }
 }
 
-static GROUND_LEVEL_VARIANTS: Lazy<Vec<GroundLevel>> = Lazy::new(|| {
-    GroundLevel::iter().collect()
-});
+static GROUND_LEVEL_VARIANTS: Lazy<Vec<GroundLevel>> = Lazy::new(|| GroundLevel::iter().collect());
 
 impl Level for GroundLevel {
     fn enumerate() -> &'static [Self] {
@@ -529,9 +525,8 @@ impl PressureLevel {
     }
 }
 
-static PRESSURE_LEVEL_VARIANTS: Lazy<Vec<PressureLevel>> = Lazy::new(|| {
-    PressureLevel::iter().collect()
-});
+static PRESSURE_LEVEL_VARIANTS: Lazy<Vec<PressureLevel>> =
+    Lazy::new(|| PressureLevel::iter().collect());
 
 impl Level for PressureLevel {
     fn enumerate() -> &'static [Self] {
