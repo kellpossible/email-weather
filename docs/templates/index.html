@@ -1,8 +1,13 @@
 {% extends "juice/templates/index.html" %}
+{% import "mymacros.html" as mymacros %}
 
 {% block favicon %}
 <link rel="icon" type="image/png" href="{{ get_url(path="favicon.ico")}}">
 {% endblock favicon %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ get_url(path="email-block.css") }}">
+{% endblock head %}
 
 {% block hero %}
 <script async defer src="https://buttons.github.io/buttons.js"></script>
@@ -11,7 +16,7 @@
         A plain-text email weather forecasting service
     </h1>
     <h3 class="text">
-        Send an email to <a href="mailto:email.weather.service@gmail.com">email.weather.service@gmail.com</a>, receive a concise and customisable plain-text forecast in reply! Optimised for use with satellite communication devices.
+        Send an email to {{ mymacros::service_email() }}, receive a concise and customisable plain-text forecast in reply! Optimised for use with satellite communication devices.
     </h3>
     <div style>
         <a class="github-button" href="https://github.com/kellpossible/email-weather" data-size="large" data-show-count="true"

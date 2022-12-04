@@ -1,0 +1,4 @@
+{%- import 'mymacros.html' as mymacros -%}
+{% if body %}{% set body = body %}{% else %}{% set body = "" %}{% endif %}
+{% if subject %}{% set subject = subject %}{% else %}{% set subject = "" %}{% endif %}
+{{ mymacros::email_block(body=body, subject=subject) }}

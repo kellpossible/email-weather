@@ -23,3 +23,4 @@ juice_extra_menu = [
 repository_url = "https://github.com/kellpossible/email-weather"
 meta_title = "Email Weather"
 meta_description = "An email based weather forecast delivery system"
+service_email = "email.weather.service@gmail.com"
