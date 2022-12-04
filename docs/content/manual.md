@@ -117,3 +117,30 @@ The [WMO 4677 Present Weather Code](https://www.nodc.noaa.gov/archive/arc0021/00
 {{ load_snippet(path="snippets/wmo_codes.html", html=true) }}
 
 ## Long
+
+With the Long format (`ML`) specified, the email will produce a more detailed forecast report, the default long format type is the [HTML Format (`MLH`)](#html), the `H` is optional.
+
+{% new_email(subject="Forecast for London") %}
+51.5287718,-0.2416804 <b>ML</b>
+{% end %}
+<br>
+
+### HTML
+
+The long HTML format (`MLH`) produces both a detailed plain text and HTML version of the forecast report, included in the same email.
+Depending on your email client configuration either the plain text, or html version will be displayed.
+
+{% new_email(subject="Forecast for London") %}
+51.5287718,-0.2416804 <b>MLH</b>
+{% end %}
+{{ response_email(body_path="snippets/london_long_plain_body.html") }}
+{{ response_email(body_path="snippets/london_long_html_body.html") }}
+
+### Plain
+
+The long plain format (`MLP`) produces a detailed plain text version of the forecast report. Some email clients have trouble displaying it nicely, so you may be better off with the [Long HTML](#html) format instead.
+
+{% new_email(subject="Forecast for London") %}
+51.5287718,-0.2416804 <b>MLP</b>
+{% end %}
+{{ response_email(body_path="snippets/london_long_plain_body.html") }}

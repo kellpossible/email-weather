@@ -3,8 +3,8 @@
 {% block title %}{{ page.title }} | {{ super() }} {% endblock title %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ get_url(path="email-block.css") }}">
 <link rel="stylesheet" href="{{ get_url(path="style.css") }}">
+<link rel="stylesheet" href="{{ get_url(path="print.css") }}">
 {% endblock head %}
 
 {% block header %}
@@ -14,7 +14,10 @@
 {% endblock header %}
 
 {% block content %}
-<div class="heading-text">{{ page.description }}</div>
-<div class="print-hidden">This page has been optimised for printing, hit <b>ctrl+P</b> to print the page (you can print to a PDF document).</div>
+<div class="heading-text"><img src="{{ get_url(path="logo.svg")}}" alt="logo" class="heading-logo print-visible">{{ page.description }}</div>
+<div class="print-hidden">
+This page has been optimised for printing, hit <b>ctrl+P</b> to print the page (you can print to a PDF document).
+The print scale is optimal at about 75%.
+</div>
 {{ page.content | safe }}
 {% endblock content %}

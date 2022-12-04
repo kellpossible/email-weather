@@ -20,12 +20,32 @@
         display: block !important;
         break-inside: avoid;
     }
-    h1 {
-        page-break-before: always;
-    }
 
-    div.toc, div.print-hidden, footer {
+    div.toc, .print-hidden, footer, header {
         display: none;
     }
+
+    .print-visible {
+        display: initial !important;
+    }
+
+    div.heading-text {
+        margin-top: 4rem;
+        background-color: #fed43f !important;
+        padding: 2rem 4rem;
+        text-align: center; 
+    }
+
+    div.heading-text img.heading-logo {
+        position: relative;
+        float: left;
+        height: 4rem;
+        padding-right: 0.5rem;
+        bottom: 1.2rem;
+    }
+}
+
+.print-visible {
+    display: none;
 }
 

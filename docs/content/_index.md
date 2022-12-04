@@ -19,22 +19,16 @@ You can then expect to receive a response similar to:
 
 {{ response_email(body_path="snippets/london_short_body.html") }}
 
-See the [User Manual](./manual#short) for help understanding the short forecast format. 
+See the [Short](./manual#short) in the user manual for help understanding the short forecast format. 
 
-You can also request a more detailed and easier to read plain text format of forecast email:
-
-{% new_email(subject="Forecast for London") %}
-51.5287718,-0.2416804 <b>ML</b>
-{% end %}
-
-{{ response_email(body_path="snippets/london_long_plain_body.html") }}
-
-Or even a HTML version:
+You can also request a more detailed and easier to read HTML version of forecast email:
 
 {% new_email(subject="Forecast for London") %}
 51.5287718,-0.2416804 <b>MLH</b>
 {% end %}
-{{ response_email(body_path="snippets/london_html_body.html") }}
+{{ response_email(body_path="snippets/london_long_html_body.html") }}
+
+See the [Long](./manual#long) in the user manual for help understanding the long html forecast format. 
 
 # User Manual
 
