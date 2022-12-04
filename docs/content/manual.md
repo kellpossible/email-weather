@@ -81,8 +81,8 @@ The first line takes the format:
 <table>
 <tr>
 <th>Timezone</th>
-<th>Forecast Elevation (meters/100)</th>
-<th>Terrain Elevation (meters/100)</th>
+<th>Forecast Elevation (meters)</th>
+<th>Terrain Elevation (meters)</th>
 </tr>
 <td>TzGMT</td><td>FE33</td><td>TE34</td>
 <tr>
@@ -98,7 +98,7 @@ Subsequent lines which form the forecast take the format:
 <th>Time (day T hour)</th>
 <th>WMO Weather Code</th>
 <th>Freezing Level (meters/100)</th>
-<th>Wind (speed/10 @ direction/10)</th>
+<th>Wind (speed kmh/10 @ direction °/10)</th>
 <th>Precipitation (mm cummulative since previous entry)</th>
 </tr>
 <tr>
