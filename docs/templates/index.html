@@ -9,28 +9,43 @@
 <link rel="stylesheet" href="{{ get_url(path="style.css") }}">
 {% endblock head %}
 
-{% block hero %}
-<script async defer src="https://buttons.github.io/buttons.js"></script>
-<section class="text-center" style="padding:10px">
-    <h1 class="heading-text">
-        A plain-text email weather forecasting service
-    </h1>
-    <h3 class="text">
-        Send an email to {{ mymacros::service_email() }}, receive a concise and customisable plain-text forecast in reply! Optimised for use with satellite communication devices.
-    </h3>
-    <div style>
-        <a class="github-button" href="https://github.com/kellpossible/email-weather" data-size="large" data-show-count="true"
-            aria-label="Star kellpossible/email-weather on GitHub">Star</a>
-        <a class="github-button" href="https://github.com/kellpossible/email-weather/fork" data-size="large"
-            data-show-count="true" aria-label="Fork kellpssible/email-weather on GitHub">Fork</a>
-    </div>
-</section>
+{% block header %}
+<header>
+    {{ macros::render_header() }}
+</header>
 
-<div class="explore-more text"
-    onclick="document.getElementById('features').scrollIntoView({behavior: 'smooth'})">
-    Read On ⇩
+<div class="hero">
+    {% block hero %}
+    <script async defer src="https://buttons.github.io/buttons.js"></script>
+
+    <div class="hero-flex-container">
+        <div class="hero-flex-title">
+            <section class="text-center" style="padding:10px">
+                <h1 class="heading-text">
+                    A plain-text email weather forecasting service
+                </h1>
+                <h3 class="text">
+                    Send an email to {{ mymacros::service_email() }}, receive a concise and customisable plain-text forecast in reply! Optimised for use with satellite communication devices.
+                </h3>
+                <div style>
+                    <a class="github-button" href="https://github.com/kellpossible/email-weather" data-size="large" data-show-count="true"
+                        aria-label="Star kellpossible/email-weather on GitHub">Star</a>
+                    <a class="github-button" href="https://github.com/kellpossible/email-weather/fork" data-size="large"
+                        data-show-count="true" aria-label="Fork kellpssible/email-weather on GitHub">Fork</a>
+                </div>
+            </section>
+        </div>
+        <div class="hero-flex-presentation">
+            <div style="width: fit-content; margin: auto; max-width: 100vw;">
+            {{ mymacros::new_email(subject="Forecast for London", body="51.5287718,-0.2416804 MLP") }}
+            {{ mymacros::response_email(body_path="snippets/london_long_plain_body.html") }}
+            </div>
+        </div>
+    </div>
+    {% endblock hero %}
 </div>
-{% endblock hero %}
+
+{% endblock header %}
 
 {% block footer %}
 <footer>

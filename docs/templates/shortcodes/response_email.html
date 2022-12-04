@@ -1,10 +1,8 @@
 {%- import 'mymacros.html' as mymacros -%}
 {% if subject %}{% set subject = subject %}{% else %}{% set subject = "" %}{% endif %}
 {% if body_path %}
-    {% set body = load_data(path=body_path, format="plain") %}
+    {{ mymacros::response_email(subject=subject, body_path=body_path) }}
 {% else %}
-    {% if body %}{% set body = body %}{% else %}{% set body = "" %}{% endif %}
+    {{ mymacros::response_email(subject=subject, body=body) }}
 {% endif %}
-{% if request_body %}{% set request_body = request_body %}{% else %}{% set request_body = "" %}{% endif %}
-{{ mymacros::response_email(subject=subject, body=body, request_body=request_body) }}
 

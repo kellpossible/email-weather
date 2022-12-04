@@ -20,7 +20,8 @@
 </div>
 {% endmacro new_email %}
 
-{% macro response_email(subject="", body="", request_body="") %}
+{% macro response_email(subject="", body="", body_path="") %}
+{% if body_path %}{% set body = load_data(path=body_path) %}{% endif %}
 <div class="email-block-response">
     <div class="email-block-heading-bar">
         <div class="email-block-heading">Response</div>

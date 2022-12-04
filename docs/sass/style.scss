@@ -16,10 +16,34 @@ h3, .subtitle-text {
   color: var(--primary-text-color);
 }
 
-div.heading-text img.heading-logo {
+div.hero-flex-container {
+    display: flex;
+    flex-flow: row;
+    align-items: center;
+    justify-content: center;
+}
+
+div.hero {
+    height: fit-content;
+    padding-bottom: 2rem;
+}
+
+div.hero-flex-title {
+    flex: 40%;
+}
+
+div.hero-flex-presentation {
+    flex: 60%;
+}
+
+header {
     position: relative;
-    float: left;
-    height: 2rem;
-    padding-right: 0.5rem;
-    bottom: 0.2rem;
+    background-color: var(--primary-color);
+    height: fit-content;
+}
+
+@media screen and (max-width: 100rem) {
+    div.hero-flex-container {
+        flex-flow: column;
+    }
 }
