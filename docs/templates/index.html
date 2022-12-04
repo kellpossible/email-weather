@@ -36,7 +36,7 @@
             </section>
         </div>
         <div class="hero-flex-presentation">
-            <div style="width: fit-content; margin: auto; max-width: 100vw;">
+            <div class="hero-flex-presentation-inner">
             {{ mymacros::new_email(subject="Forecast for London", body="51.5287718,-0.2416804 MLP") }}
             {{ mymacros::response_email(body_path="snippets/london_long_plain_body.html") }}
             </div>

@@ -36,6 +36,20 @@ div.hero-flex-presentation {
     flex: 60%;
 }
 
+div.hero-flex-presentation-inner {
+    width: fit-content;
+    margin: auto;
+    max-width: 100vw;
+}
+
+div.hero-flex-presentation-inner div.email-block-new {
+    font-size: 1.2em;
+}
+
+div.hero-flex-presentation-inner div.email-block-response {
+    font-size: 1.2em;
+}
+
 header {
     position: relative;
     background-color: var(--primary-color);

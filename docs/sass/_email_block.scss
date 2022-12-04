@@ -1,4 +1,6 @@
 div.email-block-new {
+    font-family: "Fira Sans", sans-serif;
+    font-size: 1em;
     background-color: white;
     box-shadow: 0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12),0px 5px 5px -3px rgba(0,0,0,.2);
 }
@@ -8,6 +10,8 @@ div.email-block-new-top {
 }
 
 div.email-block-response {
+    font-size: 1em;
+    font-family: "Fira Sans", sans-serif;
     background-color: white;
     box-shadow: 0px 8px 10px 1px rgba(0,0,0,.14),0px 3px 14px 2px rgba(0,0,0,.12),0px 5px 5px -3px rgba(0,0,0,.2);
 }
@@ -18,13 +22,14 @@ div.email-block-heading-bar {
 
 div.email-block-heading {
     color: #041e49;
-    margin-left: 1.6rem;
+    margin-left: 1.6em;
     font-family: "Google Sans",Roboto,RobotoDraft,Helvetica,Arial,sans-serif;
-    font-size: 1.0rem;
+    font-size: 1.0em;
     letter-spacing: normal;
     font-weight: 500;
-    padding-top: 0.8rem;
-    padding-bottom: 0.8rem;
+    padding-top: 0.8em;
+    padding-bottom: 0.8em;
+    margin-bottom: 0.4em;
 }
 
 span.email-block-top-label {
@@ -32,7 +37,7 @@ span.email-block-top-label {
 }
 
 span.email-block-top-label-small {
-    font-size: 1.0rem;
+    font-size: 1.0em;
     color: #5e5e5e;
 }
 
@@ -42,15 +47,22 @@ div.email-block-top-section {
 }
 
 div.email-block-inner {
-    padding: 0 1.6rem;
+    padding: 0 1.6em;
 }
 
 div.email-block-body {
     font: Arial,Helvetica,sans-serif;
-    font-size: 1.0rem;
-    min-height: 1.0rem;
+    font-size: 1.0em;
+    min-height: 1.0em;
     color: #222;
-    padding-top: 0.8rem;
-    padding-bottom: 0.8rem;
+    padding-top: 0.8em;
+    padding-bottom: 0.8em;
     overflow-x: auto;
+}
+
+div.email-block-body pre {
+    color: #222;
+    font-size: 0.9em;
+    padding: 0;
+    line-height: initial;
 }
